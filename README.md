@@ -1,4 +1,4 @@
-# 🚀 VniCCSS - Narwhal & Bullshark Consensus for Cosmos
+# 🚀 VniCCSS - Shoal Consensus for Cosmos
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/go-%3E%3D1.19-blue.svg)](https://golang.org/)
