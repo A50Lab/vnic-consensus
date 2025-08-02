@@ -39,7 +39,6 @@ type FastCommitManager struct {
 	byzantineMutex  sync.RWMutex
 }
 
-// FastCommitRequest represents a request for fast direct commit
 type FastCommitRequest struct {
 	ID                   string
 	Candidate            *AnchorCandidate
@@ -51,7 +50,6 @@ type FastCommitRequest struct {
 	Status               FastCommitStatus
 }
 
-// FastCommitResult represents the result of a fast commit operation
 type FastCommitResult struct {
 	RequestID        string
 	Success          bool
@@ -63,7 +61,6 @@ type FastCommitResult struct {
 	CommitRule       CommitRule
 }
 
-// FastCommitStatus represents the status of a fast commit request
 type FastCommitStatus int
 
 const (
@@ -74,7 +71,6 @@ const (
 	FastCommitTimedOut
 )
 
-// SuspiciousActivity tracks suspicious activity for Byzantine fault detection
 type SuspiciousActivity struct {
 	NodeID             types.NodeID
 	ExcessiveRequests  int
@@ -84,7 +80,6 @@ type SuspiciousActivity struct {
 	TrustScore         float64
 }
 
-// NewFastCommitManager creates a new fast commit manager
 func NewFastCommitManager(config *ShoalPPConfig, logger *zap.Logger) *FastCommitManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -100,7 +95,6 @@ func NewFastCommitManager(config *ShoalPPConfig, logger *zap.Logger) *FastCommit
 	}
 }
 
-// Start starts the fast commit manager
 func (fcm *FastCommitManager) Start() error {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
@@ -111,15 +105,12 @@ func (fcm *FastCommitManager) Start() error {
 
 	fcm.logger.Info("Starting Fast Commit Manager")
 
-	// Start fast commit processor
 	fcm.wg.Add(1)
 	go fcm.fastCommitProcessor()
 
-	// Start timeout monitor
 	fcm.wg.Add(1)
 	go fcm.timeoutMonitor()
 
-	// Start Byzantine fault detector
 	fcm.wg.Add(1)
 	go fcm.byzantineFaultDetector()
 
@@ -129,7 +120,6 @@ func (fcm *FastCommitManager) Start() error {
 	return nil
 }
 
-// Stop stops the fast commit manager
 func (fcm *FastCommitManager) Stop() {
 	fcm.mu.Lock()
 	defer fcm.mu.Unlock()
@@ -147,7 +137,6 @@ func (fcm *FastCommitManager) Stop() {
 	fcm.logger.Info("Fast Commit Manager stopped")
 }
 
-// ProcessFastCommit processes a fast commit request
 func (fcm *FastCommitManager) ProcessFastCommit(candidate *AnchorCandidate) (*FastCommitResult, error) {
 	if !fcm.config.EnableFastDirectCommit {
 		return nil, ErrFastCommitFailed
@@ -155,7 +144,6 @@ func (fcm *FastCommitManager) ProcessFastCommit(candidate *AnchorCandidate) (*Fa
 
 	start := time.Now()
 
-	// Check if node is suspicious
 	if fcm.isNodeSuspicious(candidate.NodeID) {
 		fcm.logger.Warn("Fast commit rejected for suspicious node",
 			zap.String("node_id", string(candidate.NodeID)))
@@ -165,7 +153,6 @@ func (fcm *FastCommitManager) ProcessFastCommit(candidate *AnchorCandidate) (*Fa
 		}, ErrFastCommitFailed
 	}
 
-	// Create fast commit request
 	request := &FastCommitRequest{
 		ID:                   candidate.Certificate.Hash.String(),
 		Candidate:            candidate,
@@ -177,7 +164,6 @@ func (fcm *FastCommitManager) ProcessFastCommit(candidate *AnchorCandidate) (*Fa
 		Status:               FastCommitPending,
 	}
 
-	// Check if fast commit is applicable
 	if !fcm.canUseFastCommit(request) {
 		return &FastCommitResult{
 			Success:       false,
@@ -187,23 +173,19 @@ func (fcm *FastCommitManager) ProcessFastCommit(candidate *AnchorCandidate) (*Fa
 		}, nil
 	}
 
-	// Process the fast commit
 	result := fcm.executeFastCommit(request)
 
-	// Update metrics
 	fcm.updateMetrics(result)
 
-	// Update suspicious activity tracking
 	fcm.updateSuspiciousActivity(candidate.NodeID, result.Success, result.CommitLatency)
 
 	return result, nil
 }
 
-// fastCommitProcessor processes pending fast commit requests
 func (fcm *FastCommitManager) fastCommitProcessor() {
 	defer fcm.wg.Done()
 
-	ticker := time.NewTicker(time.Millisecond * 10) // Process every 10ms
+	ticker := time.NewTicker(time.Millisecond * 10)
 	defer ticker.Stop()
 
 	for {
@@ -216,7 +198,6 @@ func (fcm *FastCommitManager) fastCommitProcessor() {
 	}
 }
 
-// processPendingCommits processes all pending fast commit requests
 func (fcm *FastCommitManager) processPendingCommits() {
 	fcm.commitMutex.Lock()
 	defer fcm.commitMutex.Unlock()
@@ -231,7 +212,6 @@ func (fcm *FastCommitManager) processPendingCommits() {
 	}
 }
 
-// processAsyncCommit processes a fast commit request asynchronously
 func (fcm *FastCommitManager) processAsyncCommit(request *FastCommitRequest) {
 	result := fcm.executeFastCommit(request)
 
@@ -244,30 +224,26 @@ func (fcm *FastCommitManager) processAsyncCommit(request *FastCommitRequest) {
 	fcm.updateMetrics(result)
 }
 
-// executeFastCommit executes the fast direct commit
 func (fcm *FastCommitManager) executeFastCommit(request *FastCommitRequest) *FastCommitResult {
 	start := time.Now()
 
-	// Simulate fast commit processing (4 message delays instead of 6)
-	// In a real implementation, this would interact with the consensus mechanism
 	processingTime := fcm.calculateProcessingTime(request)
 	time.Sleep(processingTime)
 
 	commitLatency := time.Since(start)
-	originalLatency := time.Duration(float64(commitLatency) * 1.5) // 6/4 = 1.5x
+	originalLatency := time.Duration(float64(commitLatency) * 1.5)
 	latencyReduction := originalLatency - commitLatency
 
 	result := &FastCommitResult{
 		RequestID:        request.ID,
 		Success:          true,
 		CommitLatency:    commitLatency,
-		MessageDelays:    4, // Shoal++ reduces from 6 to 4
+		MessageDelays:    4,
 		LatencyReduction: latencyReduction,
 		CommittedAt:      time.Now(),
 		CommitRule:       FastDirectCommitRule,
 	}
 
-	// Check for Byzantine behavior
 	if fcm.detectByzantineCommit(request, result) {
 		result.Success = false
 		result.Error = ErrFastCommitFailed
@@ -277,24 +253,19 @@ func (fcm *FastCommitManager) executeFastCommit(request *FastCommitRequest) *Fas
 	return result
 }
 
-// canUseFastCommit determines if fast commit can be used for this request
 func (fcm *FastCommitManager) canUseFastCommit(request *FastCommitRequest) bool {
-	// Check threshold requirement (2f+1 uncertified proposals)
 	if request.UncertifiedProposals < request.Threshold {
 		return false
 	}
 
-	// Check if node is not suspicious
 	if fcm.isNodeSuspicious(request.NodeID) {
 		return false
 	}
 
-	// Check timeout
 	if time.Since(request.RequestTime) > request.Timeout {
 		return false
 	}
 
-	// Check network conditions
 	if !fcm.isNetworkSuitable() {
 		return false
 	}
@@ -302,13 +273,10 @@ func (fcm *FastCommitManager) canUseFastCommit(request *FastCommitRequest) bool 
 	return true
 }
 
-// calculateCommitTimeout calculates the timeout for a fast commit based on node reputation
 func (fcm *FastCommitManager) calculateCommitTimeout(nodeID types.NodeID) time.Duration {
-	baseTimeout := time.Millisecond * 100 // Base fast commit timeout
+	baseTimeout := time.Millisecond * 100
 
-	// Adjust based on suspicious activity
 	if activity, exists := fcm.suspiciousNodes[nodeID]; exists {
-		// Reduce timeout for suspicious nodes
 		adjustment := 1.0 - (1.0-activity.TrustScore)*0.5
 		return time.Duration(float64(baseTimeout) * adjustment)
 	}
@@ -316,28 +284,21 @@ func (fcm *FastCommitManager) calculateCommitTimeout(nodeID types.NodeID) time.D
 	return baseTimeout
 }
 
-// calculateProcessingTime calculates the processing time for a fast commit
 func (fcm *FastCommitManager) calculateProcessingTime(request *FastCommitRequest) time.Duration {
-	// Base processing time for 4 message delays
-	baseTime := time.Millisecond * 40 // 10ms per message delay
+	baseTime := time.Millisecond * 40
 
-	// Adjust based on network conditions and node reputation
 	networkFactor := 1.0
 	if !fcm.isNetworkSuitable() {
-		networkFactor = 1.2 // 20% slower in poor network conditions
+		networkFactor = 1.2
 	}
 
 	return time.Duration(float64(baseTime) * networkFactor)
 }
 
-// isNetworkSuitable checks if network conditions are suitable for fast commit
 func (fcm *FastCommitManager) isNetworkSuitable() bool {
-	// Check various network conditions
-	// This would integrate with actual network monitoring
 	return true // Simplified for now
 }
 
-// getUncertifiedCount gets the count of uncertified proposals for a node
 func (fcm *FastCommitManager) getUncertifiedCount(nodeID types.NodeID) int {
 	fcm.commitMutex.RLock()
 	defer fcm.commitMutex.RUnlock()
@@ -348,7 +309,6 @@ func (fcm *FastCommitManager) getUncertifiedCount(nodeID types.NodeID) int {
 	return 0
 }
 
-// UpdateUncertifiedCount updates the uncertified proposal count for a node
 func (fcm *FastCommitManager) UpdateUncertifiedCount(nodeID types.NodeID, count int) {
 	fcm.commitMutex.Lock()
 	defer fcm.commitMutex.Unlock()
@@ -356,11 +316,10 @@ func (fcm *FastCommitManager) UpdateUncertifiedCount(nodeID types.NodeID, count 
 	fcm.uncertifiedProposals[nodeID] = count
 }
 
-// timeoutMonitor monitors and handles request timeouts
 func (fcm *FastCommitManager) timeoutMonitor() {
 	defer fcm.wg.Done()
 
-	ticker := time.NewTicker(time.Millisecond * 50) // Check every 50ms
+	ticker := time.NewTicker(time.Millisecond * 50)
 	defer ticker.Stop()
 
 	for {
@@ -373,7 +332,6 @@ func (fcm *FastCommitManager) timeoutMonitor() {
 	}
 }
 
-// handleTimeouts handles timed-out fast commit requests
 func (fcm *FastCommitManager) handleTimeouts() {
 	fcm.commitMutex.Lock()
 	defer fcm.commitMutex.Unlock()
@@ -385,12 +343,11 @@ func (fcm *FastCommitManager) handleTimeouts() {
 		if now.Sub(request.RequestTime) > request.Timeout {
 			request.Status = FastCommitTimedOut
 
-			// Create timeout result
 			result := &FastCommitResult{
 				RequestID:     request.ID,
 				Success:       false,
 				CommitLatency: now.Sub(request.RequestTime),
-				MessageDelays: 6, // Fall back to original
+				MessageDelays: 6,
 				Error:         ErrRoundTimeoutExceeded,
 				CommittedAt:   now,
 				CommitRule:    OriginalCommitRule,
@@ -399,24 +356,21 @@ func (fcm *FastCommitManager) handleTimeouts() {
 			fcm.commitResults[hash] = result
 			toDelete = append(toDelete, hash)
 
-			// Mark as suspicious activity
 			fcm.markSuspicious(request.NodeID, "frequent_timeouts")
 
 			atomic.AddInt64(&fcm.failedCommits, 1)
 		}
 	}
 
-	// Clean up timed-out requests
 	for _, hash := range toDelete {
 		delete(fcm.pendingCommits, hash)
 	}
 }
 
-// byzantineFaultDetector detects Byzantine fault patterns
 func (fcm *FastCommitManager) byzantineFaultDetector() {
 	defer fcm.wg.Done()
 
-	ticker := time.NewTicker(time.Second * 30) // Check every 30 seconds
+	ticker := time.NewTicker(time.Second * 30)
 	defer ticker.Stop()
 
 	for {
@@ -429,7 +383,6 @@ func (fcm *FastCommitManager) byzantineFaultDetector() {
 	}
 }
 
-// detectByzantinePatterns detects Byzantine behavior patterns
 func (fcm *FastCommitManager) detectByzantinePatterns() {
 	fcm.byzantineMutex.Lock()
 	defer fcm.byzantineMutex.Unlock()
@@ -437,17 +390,14 @@ func (fcm *FastCommitManager) detectByzantinePatterns() {
 	now := time.Now()
 
 	for nodeID, activity := range fcm.suspiciousNodes {
-		// Decay suspicious activity over time
 		timeSinceLastSuspicious := now.Sub(activity.LastSuspiciousTime)
 		if timeSinceLastSuspicious > time.Minute*10 {
-			// Gradually restore trust
 			activity.TrustScore += 0.1
 			if activity.TrustScore > 1.0 {
 				activity.TrustScore = 1.0
 			}
 		}
 
-		// Check for Byzantine patterns
 		if activity.ExcessiveRequests > 10 ||
 			activity.FailedCommits > 5 ||
 			activity.AnomalousLatencies > 8 {
@@ -460,7 +410,6 @@ func (fcm *FastCommitManager) detectByzantinePatterns() {
 				zap.Float64("trust_score", activity.TrustScore),
 			)
 
-			// Reduce trust score
 			activity.TrustScore *= 0.5
 			if activity.TrustScore < 0.1 {
 				activity.TrustScore = 0.1
@@ -469,19 +418,15 @@ func (fcm *FastCommitManager) detectByzantinePatterns() {
 	}
 }
 
-// detectByzantineCommit detects Byzantine behavior in a commit
 func (fcm *FastCommitManager) detectByzantineCommit(request *FastCommitRequest, result *FastCommitResult) bool {
-	// Pattern 1: Unusually fast commit (potential replay attack)
 	if result.CommitLatency < time.Millisecond*5 {
 		return true
 	}
 
-	// Pattern 2: Unusually slow commit (potential stalling attack)
 	if result.CommitLatency > time.Millisecond*200 {
 		return true
 	}
 
-	// Pattern 3: Excessive requests from the same node
 	activity := fcm.getSuspiciousActivity(request.NodeID)
 	if activity.ExcessiveRequests > 20 {
 		return true
@@ -490,18 +435,16 @@ func (fcm *FastCommitManager) detectByzantineCommit(request *FastCommitRequest, 
 	return false
 }
 
-// isNodeSuspicious checks if a node is considered suspicious
 func (fcm *FastCommitManager) isNodeSuspicious(nodeID types.NodeID) bool {
 	fcm.byzantineMutex.RLock()
 	defer fcm.byzantineMutex.RUnlock()
 
 	if activity, exists := fcm.suspiciousNodes[nodeID]; exists {
-		return activity.TrustScore < 0.3 // Threshold for suspicious behavior
+		return activity.TrustScore < 0.3
 	}
 	return false
 }
 
-// markSuspicious marks a node as suspicious
 func (fcm *FastCommitManager) markSuspicious(nodeID types.NodeID, reason string) {
 	fcm.byzantineMutex.Lock()
 	defer fcm.byzantineMutex.Unlock()
@@ -534,7 +477,6 @@ func (fcm *FastCommitManager) markSuspicious(nodeID types.NodeID, reason string)
 	)
 }
 
-// getSuspiciousActivity gets or creates suspicious activity tracking for a node
 func (fcm *FastCommitManager) getSuspiciousActivity(nodeID types.NodeID) *SuspiciousActivity {
 	if activity, exists := fcm.suspiciousNodes[nodeID]; exists {
 		return activity
@@ -549,7 +491,6 @@ func (fcm *FastCommitManager) getSuspiciousActivity(nodeID types.NodeID) *Suspic
 	return activity
 }
 
-// updateSuspiciousActivity updates suspicious activity tracking
 func (fcm *FastCommitManager) updateSuspiciousActivity(nodeID types.NodeID, success bool, latency time.Duration) {
 	activity := fcm.getSuspiciousActivity(nodeID)
 
@@ -557,19 +498,16 @@ func (fcm *FastCommitManager) updateSuspiciousActivity(nodeID types.NodeID, succ
 		fcm.markSuspicious(nodeID, "frequent_timeouts")
 	}
 
-	// Check for anomalous latencies
 	if latency < time.Millisecond*2 || latency > time.Millisecond*150 {
 		fcm.markSuspicious(nodeID, "anomalous_latency")
 	}
 
-	// Check for excessive requests
 	activity.ExcessiveRequests++
 	if activity.ExcessiveRequests > 15 {
 		fcm.markSuspicious(nodeID, "excessive_requests")
 	}
 }
 
-// updateMetrics updates fast commit performance metrics
 func (fcm *FastCommitManager) updateMetrics(result *FastCommitResult) {
 	atomic.AddInt64(&fcm.totalCommits, 1)
 
@@ -579,14 +517,12 @@ func (fcm *FastCommitManager) updateMetrics(result *FastCommitResult) {
 		atomic.AddInt64(&fcm.failedCommits, 1)
 	}
 
-	// Update average latency
 	atomic.AddInt64(&fcm.latencyCount, 1)
 	newLatencySum := atomic.AddInt64((*int64)(&fcm.latencySum), int64(result.CommitLatency))
 	newAvg := time.Duration(newLatencySum / atomic.LoadInt64(&fcm.latencyCount))
 	atomic.StoreInt64((*int64)(&fcm.avgCommitLatency), int64(newAvg))
 }
 
-// GetStats returns comprehensive fast commit statistics
 func (fcm *FastCommitManager) GetStats() map[string]interface{} {
 	fcm.commitMutex.RLock()
 	pendingCount := len(fcm.pendingCommits)
@@ -620,7 +556,6 @@ func (fcm *FastCommitManager) GetStats() map[string]interface{} {
 	}
 }
 
-// GetResult gets the result of a fast commit request
 func (fcm *FastCommitManager) GetResult(requestID string) (*FastCommitResult, bool) {
 	fcm.commitMutex.RLock()
 	defer fcm.commitMutex.RUnlock()
@@ -629,7 +564,6 @@ func (fcm *FastCommitManager) GetResult(requestID string) (*FastCommitResult, bo
 	return result, exists
 }
 
-// ClearOldResults clears old fast commit results to prevent memory leaks
 func (fcm *FastCommitManager) ClearOldResults(maxAge time.Duration) {
 	fcm.commitMutex.Lock()
 	defer fcm.commitMutex.Unlock()

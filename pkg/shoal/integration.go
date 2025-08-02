@@ -36,12 +36,10 @@ func NewShoalPPIntegration(
 }
 
 func (si *ShoalPPIntegration) SetBullsharkEngine(engine interface{}) {
-	// Store engine interface to avoid import cycle
 	si.logger.Info("Bullshark engine integrated with Shoal++")
 }
 
 func (si *ShoalPPIntegration) SetBullsharkSelector(selector interface{}) {
-	// Use reflection or interface to set Shoal++ framework on selector
 	if setter, ok := selector.(interface{ SetShoalPPFramework(*ShoalPPFramework) }); ok {
 		setter.SetShoalPPFramework(si.shoalppFramework)
 	}
@@ -49,7 +47,6 @@ func (si *ShoalPPIntegration) SetBullsharkSelector(selector interface{}) {
 }
 
 func (si *ShoalPPIntegration) SetNarwhalPrimary(primary interface{}) {
-	// Use reflection or interface to set Shoal++ framework on primary
 	if setter, ok := primary.(interface{ SetShoalPPFramework(*ShoalPPFramework) }); ok {
 		setter.SetShoalPPFramework(si.shoalppFramework)
 	}
@@ -59,17 +56,14 @@ func (si *ShoalPPIntegration) SetNarwhalPrimary(primary interface{}) {
 func (si *ShoalPPIntegration) Start() error {
 	si.logger.Info("Starting Shoal++ integration")
 
-	// Start the Shoal++ framework
 	if err := si.shoalppFramework.Start(); err != nil {
 		return err
 	}
 
-	// Set up performance monitoring
 	if si.config.EnableMetrics {
 		go si.performanceMonitor()
 	}
 
-	// Set up Shoal++ specific monitoring
 	go si.shoalppMonitor()
 
 	si.logger.Info("Shoal++ integration started successfully")
@@ -127,7 +121,6 @@ func (si *ShoalPPIntegration) logPerformanceMetrics(metrics PerformanceMetrics) 
 		zap.Int("reputation_leaders", len(metrics.ReputationScores)),
 		zap.Bool("prevalent_responsiveness", metrics.PrevalentResponsiveness),
 
-		// Shoal++ specific metrics
 		zap.Duration("fast_commit_latency", metrics.FastCommitLatency),
 		zap.Duration("dynamic_anchor_latency", metrics.DynamicAnchorLatency),
 		zap.Duration("parallel_dag_latency", metrics.ParallelDAGLatency),
@@ -152,7 +145,6 @@ func (si *ShoalPPIntegration) logShoalPPFeatures() {
 		zap.Any("reputation", stats["reputation"]),
 	)
 
-	// Log improvements
 	improvements := si.shoalppFramework.metrics.GetShoalPPImprovements()
 	overallImprovement := si.shoalppFramework.metrics.CalculateOverallImprovement()
 
@@ -195,14 +187,12 @@ func (si *ShoalPPIntegration) GetConfig() *ShoalPPConfig {
 	return si.config
 }
 
-// EnhancedConsensusState represents enhanced consensus state with Shoal++ metrics
 type EnhancedConsensusState struct {
 	*bullsharktypes.ConsensusState
 	ShoalPPMetrics PerformanceMetrics
 	LastUpdate     time.Time
 }
 
-// NewEnhancedConsensusState creates a new enhanced consensus state
 func NewEnhancedConsensusState(baseState *bullsharktypes.ConsensusState, shoalppMetrics PerformanceMetrics) *EnhancedConsensusState {
 	return &EnhancedConsensusState{
 		ConsensusState: baseState,
@@ -211,54 +201,45 @@ func NewEnhancedConsensusState(baseState *bullsharktypes.ConsensusState, shoalpp
 	}
 }
 
-// GetEnhancedState returns enhanced consensus state with Shoal++ metrics
 func (si *ShoalPPIntegration) GetEnhancedState(baseState *bullsharktypes.ConsensusState) *EnhancedConsensusState {
 	metrics := si.shoalppFramework.GetMetrics()
 	return NewEnhancedConsensusState(baseState, metrics)
 }
 
-// OptimizeForNetwork optimizes settings based on current network conditions
 func (si *ShoalPPIntegration) OptimizeForNetwork() {
 	metrics := si.shoalppFramework.GetMetrics()
 
-	// Optimize based on current latency
 	if metrics.AvgLatency > time.Millisecond*500 {
 		si.logger.Info("High latency detected, optimizing for network conditions",
 			zap.Duration("avg_latency", metrics.AvgLatency),
 		)
 
-		// Apply network optimizations
 		conditions := NetworkConditions{
 			AvgLatency: metrics.AvgLatency,
 			ErrorRate:  metrics.ErrorRate,
-			PacketLoss: 0.01, // Example
+			PacketLoss: 0.01,
 			Throughput: metrics.MessagesPerSecond,
-			Jitter:     time.Millisecond * 10, // Example
+			Jitter:     time.Millisecond * 10,
 		}
 
 		si.shoalppFramework.networkOptimizer.OptimizeForNetworkConditions(conditions)
 	}
 
-	// Optimize based on error rate
-	if metrics.ErrorRate > 0.1 { // 10% error rate
+	if metrics.ErrorRate > 0.1 {
 		si.logger.Warn("High error rate detected, adjusting for reliability",
 			zap.Float64("error_rate", metrics.ErrorRate),
 		)
 
-		// Could implement error-based optimizations here
 	}
 
-	// Optimize based on throughput
 	if metrics.MessagesPerSecond < 10 {
 		si.logger.Info("Low throughput detected, optimizing for performance",
 			zap.Float64("messages_per_second", metrics.MessagesPerSecond),
 		)
 
-		// Could implement throughput optimizations here
 	}
 }
 
-// GetDetailedStats returns detailed statistics including Shoal++ enhancements
 func (si *ShoalPPIntegration) GetDetailedStats() map[string]interface{} {
 	metrics := si.shoalppFramework.GetMetrics()
 	shoalppStats := si.shoalppFramework.GetShoalPPStats()
@@ -273,14 +254,12 @@ func (si *ShoalPPIntegration) GetDetailedStats() map[string]interface{} {
 		"pipelining_enabled":        si.config.EnablePipelining,
 		"metrics_enabled":           si.config.EnableMetrics,
 
-		// Shoal++ specific features
 		"fast_commit_enabled":     si.config.EnableFastDirectCommit,
 		"dynamic_anchor_enabled":  si.config.EnableDynamicAnchorFreq,
 		"parallel_dags_enabled":   si.config.EnableParallelDAGs,
 		"anchor_skipping_enabled": si.config.AnchorSkippingEnabled,
 		"round_timeout_enabled":   si.config.RoundTimeoutEnabled,
 
-		// Performance metrics
 		"avg_latency_ms":      metrics.AvgLatency.Milliseconds(),
 		"min_latency_ms":      metrics.MinLatency.Milliseconds(),
 		"max_latency_ms":      metrics.MaxLatency.Milliseconds(),
@@ -290,12 +269,10 @@ func (si *ShoalPPIntegration) GetDetailedStats() map[string]interface{} {
 		"total_messages":      metrics.TotalCount,
 		"error_count":         metrics.ErrorCount,
 
-		// Consensus-specific metrics
 		"block_latency_ms":         metrics.BlockLatency.Milliseconds(),
 		"certificate_latency_ms":   metrics.CertificateLatency.Milliseconds(),
 		"anchor_selection_time_ms": metrics.AnchorSelectionTime.Milliseconds(),
 
-		// Shoal++ specific metrics
 		"fast_commit_latency_ms":     metrics.FastCommitLatency.Milliseconds(),
 		"dynamic_anchor_latency_ms":  metrics.DynamicAnchorLatency.Milliseconds(),
 		"parallel_dag_latency_ms":    metrics.ParallelDAGLatency.Milliseconds(),
@@ -306,13 +283,11 @@ func (si *ShoalPPIntegration) GetDetailedStats() map[string]interface{} {
 		"parallel_dag_utilization":   metrics.ParallelDAGUtilization,
 		"message_delay_reduction":    metrics.MessageDelayReduction,
 
-		// Traditional Shoal metrics
 		"adaptive_timeout_ms":      metrics.AdaptiveTimeoutValue.Milliseconds(),
 		"pipeline_utilization":     metrics.PipelineUtilization,
 		"prevalent_responsiveness": metrics.PrevalentResponsiveness,
 		"reputation_leaders_count": len(metrics.ReputationScores),
 
-		// Configuration
 		"reputation_window_s":    si.config.ReputationWindow.Seconds(),
 		"base_timeout_ms":        si.config.BaseTimeout.Milliseconds(),
 		"pipeline_depth":         si.config.PipelineDepth,
@@ -322,13 +297,11 @@ func (si *ShoalPPIntegration) GetDetailedStats() map[string]interface{} {
 		"fast_commit_threshold":  si.config.FastCommitThreshold,
 		"dag_stagger_delay_ms":   si.config.DAGStaggerDelay.Milliseconds(),
 
-		// Detailed stats from components
 		"component_stats":      shoalppStats,
 		"shoalpp_improvements": improvements,
 		"overall_improvement":  overallImprovement,
 	}
 
-	// Add reputation scores for best leaders
 	bestLeaders := si.shoalppFramework.GetBestLeaders(5)
 	leaderScores := make(map[string]float64)
 	for _, nodeID := range bestLeaders {

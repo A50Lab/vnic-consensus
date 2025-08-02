@@ -20,19 +20,16 @@ type DynamicAnchorManager struct {
 	running bool
 	mu      sync.RWMutex
 
-	// Dynamic anchor state
 	anchorSchedule map[types.Round]*AnchorScheduleEntry
 	activeAnchors  map[types.NodeID]*ActiveAnchor
 	roundTimeouts  map[types.Round]*RoundTimeout
 	scheduleMutex  sync.RWMutex
 
-	// Frequency adjustment
 	baseFrequency      float64
 	currentFrequency   float64
 	frequencyHistory   []FrequencyMeasurement
 	adaptiveController *AdaptiveFrequencyController
 
-	// Performance metrics
 	totalAnchors       int64
 	dynamicAnchors     int64
 	timeoutOccurrences int64
@@ -40,7 +37,6 @@ type DynamicAnchorManager struct {
 	avgResponseTime    time.Duration
 }
 
-// AnchorScheduleEntry represents an entry in the anchor schedule
 type AnchorScheduleEntry struct {
 	Round               types.Round
 	ScheduledAnchors    []types.NodeID
@@ -51,7 +47,6 @@ type AnchorScheduleEntry struct {
 	FrequencyMultiplier float64
 }
 
-// ActiveAnchor represents an active anchor node
 type ActiveAnchor struct {
 	NodeID         types.NodeID
 	Round          types.Round
@@ -63,7 +58,6 @@ type ActiveAnchor struct {
 	SkipCount      int
 }
 
-// AnchorScheduleStatus represents the status of an anchor schedule entry
 type AnchorScheduleStatus int
 
 const (
@@ -74,7 +68,6 @@ const (
 	ScheduleSkipped
 )
 
-// FrequencyMeasurement represents a measurement of anchor frequency
 type FrequencyMeasurement struct {
 	Timestamp  time.Time
 	Frequency  float64
@@ -83,7 +76,6 @@ type FrequencyMeasurement struct {
 	ErrorRate  float64
 }
 
-// AdaptiveFrequencyController controls dynamic frequency adjustments
 type AdaptiveFrequencyController struct {
 	targetThroughput   float64
 	targetLatency      time.Duration
@@ -92,14 +84,12 @@ type AdaptiveFrequencyController struct {
 	adjustmentRate     float64
 	stabilityThreshold time.Duration
 
-	// PID controller parameters
 	kp, ki, kd     float64
 	errorIntegral  float64
 	lastError      float64
 	lastAdjustment time.Time
 }
 
-// DynamicAnchorResult represents the result of a dynamic anchor operation
 type DynamicAnchorResult struct {
 	NodeID               types.NodeID
 	Round                types.Round
@@ -111,20 +101,19 @@ type DynamicAnchorResult struct {
 	Error                error
 }
 
-// NewDynamicAnchorManager creates a new dynamic anchor manager
 func NewDynamicAnchorManager(config *ShoalPPConfig, logger *zap.Logger) *DynamicAnchorManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	controller := &AdaptiveFrequencyController{
-		targetThroughput:   1000.0,                // Target: 1000 ops/sec
-		targetLatency:      time.Millisecond * 50, // Target: 50ms latency
-		maxFrequency:       5.0,                   // Max 5x base frequency
-		minFrequency:       0.2,                   // Min 0.2x base frequency
-		adjustmentRate:     0.1,                   // 10% adjustment steps
-		stabilityThreshold: time.Second * 30,      // 30s stability required
-		kp:                 0.5,                   // Proportional gain
-		ki:                 0.1,                   // Integral gain
-		kd:                 0.05,                  // Derivative gain
+		targetThroughput:   1000.0,
+		targetLatency:      time.Millisecond * 50,
+		maxFrequency:       5.0,
+		minFrequency:       0.2,
+		adjustmentRate:     0.1,
+		stabilityThreshold: time.Second * 30,
+		kp:                 0.5,
+		ki:                 0.1,
+		kd:                 0.05,
 		lastAdjustment:     time.Now(),
 	}
 
@@ -136,14 +125,13 @@ func NewDynamicAnchorManager(config *ShoalPPConfig, logger *zap.Logger) *Dynamic
 		anchorSchedule:     make(map[types.Round]*AnchorScheduleEntry),
 		activeAnchors:      make(map[types.NodeID]*ActiveAnchor),
 		roundTimeouts:      make(map[types.Round]*RoundTimeout),
-		baseFrequency:      1.0, // Base frequency (1 anchor per round)
+		baseFrequency:      1.0,
 		currentFrequency:   1.0,
 		frequencyHistory:   make([]FrequencyMeasurement, 0, 100),
 		adaptiveController: controller,
 	}
 }
 
-// Start starts the dynamic anchor manager
 func (dam *DynamicAnchorManager) Start() error {
 	dam.mu.Lock()
 	defer dam.mu.Unlock()
@@ -154,19 +142,15 @@ func (dam *DynamicAnchorManager) Start() error {
 
 	dam.logger.Info("Starting Dynamic Anchor Manager")
 
-	// Start dynamic anchor processor
 	dam.wg.Add(1)
 	go dam.dynamicAnchorProcessor()
 
-	// Start round timeout monitor
 	dam.wg.Add(1)
 	go dam.roundTimeoutMonitor()
 
-	// Start frequency controller
 	dam.wg.Add(1)
 	go dam.frequencyController()
 
-	// Start performance monitor
 	dam.wg.Add(1)
 	go dam.performanceMonitor()
 
@@ -176,7 +160,6 @@ func (dam *DynamicAnchorManager) Start() error {
 	return nil
 }
 
-// Stop stops the dynamic anchor manager
 func (dam *DynamicAnchorManager) Stop() {
 	dam.mu.Lock()
 	defer dam.mu.Unlock()
@@ -194,7 +177,6 @@ func (dam *DynamicAnchorManager) Stop() {
 	dam.logger.Info("Dynamic Anchor Manager stopped")
 }
 
-// ProcessDynamicAnchor processes a dynamic anchor operation
 func (dam *DynamicAnchorManager) ProcessDynamicAnchor(candidate *AnchorCandidate) (*DynamicAnchorResult, error) {
 	if !dam.config.EnableDynamicAnchorFreq {
 		return nil, ErrDynamicAnchorFailed
@@ -202,7 +184,6 @@ func (dam *DynamicAnchorManager) ProcessDynamicAnchor(candidate *AnchorCandidate
 
 	start := time.Now()
 
-	// Check if anchor should be included based on dynamic schedule
 	shouldInclude := dam.shouldIncludeAnchor(candidate)
 	if !shouldInclude {
 		return &DynamicAnchorResult{
@@ -213,20 +194,17 @@ func (dam *DynamicAnchorManager) ProcessDynamicAnchor(candidate *AnchorCandidate
 		}, nil
 	}
 
-	// Process the dynamic anchor
 	result := dam.executeDynamicAnchor(candidate, start)
 
-	// Update metrics
 	dam.updateMetrics(result)
 
 	return result, nil
 }
 
-// dynamicAnchorProcessor processes dynamic anchor scheduling
 func (dam *DynamicAnchorManager) dynamicAnchorProcessor() {
 	defer dam.wg.Done()
 
-	ticker := time.NewTicker(time.Millisecond * 100) // Process every 100ms
+	ticker := time.NewTicker(time.Millisecond * 100)
 	defer ticker.Stop()
 
 	for {
@@ -240,7 +218,6 @@ func (dam *DynamicAnchorManager) dynamicAnchorProcessor() {
 	}
 }
 
-// processScheduledAnchors processes anchors according to the dynamic schedule
 func (dam *DynamicAnchorManager) processScheduledAnchors() {
 	dam.scheduleMutex.Lock()
 	defer dam.scheduleMutex.Unlock()
@@ -249,13 +226,11 @@ func (dam *DynamicAnchorManager) processScheduledAnchors() {
 
 	for round, entry := range dam.anchorSchedule {
 		if entry.Status == SchedulePending {
-			// Check if it's time to activate this anchor schedule
 			if now.Sub(entry.Timestamp) >= time.Duration(0) {
 				entry.Status = ScheduleActive
 				dam.activateAnchorSchedule(entry)
 			}
 		} else if entry.Status == ScheduleActive {
-			// Check for timeout
 			if now.Sub(entry.Timestamp) > entry.Timeout {
 				entry.Status = ScheduleTimedOut
 				dam.handleScheduleTimeout(entry)
@@ -264,7 +239,6 @@ func (dam *DynamicAnchorManager) processScheduledAnchors() {
 	}
 }
 
-// activateAnchorSchedule activates an anchor schedule
 func (dam *DynamicAnchorManager) activateAnchorSchedule(entry *AnchorScheduleEntry) {
 	dam.logger.Debug("Activating anchor schedule",
 		zap.Uint64("round", uint64(entry.Round)),
@@ -272,7 +246,6 @@ func (dam *DynamicAnchorManager) activateAnchorSchedule(entry *AnchorScheduleEnt
 		zap.Float64("frequency_multiplier", entry.FrequencyMultiplier),
 	)
 
-	// Activate anchors for this round
 	for _, nodeID := range entry.ScheduledAnchors {
 		anchor := &ActiveAnchor{
 			NodeID:         nodeID,
@@ -286,7 +259,6 @@ func (dam *DynamicAnchorManager) activateAnchorSchedule(entry *AnchorScheduleEnt
 	}
 }
 
-// handleScheduleTimeout handles timeout of an anchor schedule
 func (dam *DynamicAnchorManager) handleScheduleTimeout(entry *AnchorScheduleEntry) {
 	dam.logger.Warn("Anchor schedule timed out",
 		zap.Uint64("round", uint64(entry.Round)),
@@ -295,7 +267,6 @@ func (dam *DynamicAnchorManager) handleScheduleTimeout(entry *AnchorScheduleEntr
 
 	atomic.AddInt64(&dam.timeoutOccurrences, 1)
 
-	// Remove unresponsive anchors
 	for _, nodeID := range entry.ScheduledAnchors {
 		if anchor, exists := dam.activeAnchors[nodeID]; exists {
 			anchor.IsResponsive = false
@@ -304,12 +275,9 @@ func (dam *DynamicAnchorManager) handleScheduleTimeout(entry *AnchorScheduleEntr
 	}
 }
 
-// adjustAnchorFrequency adjusts the anchor frequency based on performance metrics
 func (dam *DynamicAnchorManager) adjustAnchorFrequency() {
-	// Collect current performance metrics
 	currentMetrics := dam.getCurrentMetrics()
 
-	// Add to frequency history
 	measurement := FrequencyMeasurement{
 		Timestamp:  time.Now(),
 		Frequency:  dam.currentFrequency,
@@ -320,7 +288,6 @@ func (dam *DynamicAnchorManager) adjustAnchorFrequency() {
 
 	dam.addFrequencyMeasurement(measurement)
 
-	// Apply adaptive frequency control
 	newFrequency := dam.adaptiveController.adjustFrequency(currentMetrics, dam.currentFrequency)
 
 	if newFrequency != dam.currentFrequency {
@@ -336,43 +303,35 @@ func (dam *DynamicAnchorManager) adjustAnchorFrequency() {
 	}
 }
 
-// shouldIncludeAnchor determines if an anchor should be included based on dynamic frequency
 func (dam *DynamicAnchorManager) shouldIncludeAnchor(candidate *AnchorCandidate) bool {
-	// Check round timeout
 	if dam.config.RoundTimeoutEnabled {
 		if dam.isRoundTimedOut(candidate.Round) {
 			return false
 		}
 	}
 
-	// Check dynamic frequency schedule
 	scheduleProbability := dam.calculateInclusionProbability(candidate)
 
-	// Use deterministic inclusion based on hash for consistency
 	hash := candidate.Certificate.Hash.String()
 	hashValue := dam.hashToProbability(hash)
 
 	return hashValue < scheduleProbability
 }
 
-// calculateInclusionProbability calculates the probability of including an anchor
 func (dam *DynamicAnchorManager) calculateInclusionProbability(candidate *AnchorCandidate) float64 {
 	baseProbability := 1.0 / dam.baseFrequency
 	adjustedProbability := baseProbability * dam.currentFrequency
 
-	// Adjust based on node responsiveness
 	if anchor, exists := dam.activeAnchors[candidate.NodeID]; exists {
 		if !anchor.IsResponsive {
-			adjustedProbability *= 0.5 // Reduce probability for unresponsive nodes
+			adjustedProbability *= 0.5
 		}
 
-		// Adjust based on skip count
 		if anchor.SkipCount > 3 {
-			adjustedProbability *= 0.3 // Further reduce for frequently skipped nodes
+			adjustedProbability *= 0.3
 		}
 	}
 
-	// Ensure probability is within bounds
 	if adjustedProbability > 1.0 {
 		adjustedProbability = 1.0
 	} else if adjustedProbability < 0.0 {
@@ -382,9 +341,7 @@ func (dam *DynamicAnchorManager) calculateInclusionProbability(candidate *Anchor
 	return adjustedProbability
 }
 
-// hashToProbability converts a hash string to a probability value [0, 1)
 func (dam *DynamicAnchorManager) hashToProbability(hash string) float64 {
-	// Simple hash-to-probability conversion
 	sum := 0
 	for _, b := range hash {
 		sum += int(b)
@@ -392,17 +349,14 @@ func (dam *DynamicAnchorManager) hashToProbability(hash string) float64 {
 	return float64(sum%1000) / 1000.0
 }
 
-// executeDynamicAnchor executes a dynamic anchor operation
 func (dam *DynamicAnchorManager) executeDynamicAnchor(candidate *AnchorCandidate, start time.Time) *DynamicAnchorResult {
-	// Simulate dynamic anchor processing
 	processingTime := dam.calculateDynamicProcessingTime(candidate)
 	time.Sleep(processingTime)
 
 	responseTime := time.Since(start)
 
-	// Calculate improvements
 	frequencyImprovement := dam.frequencyGain
-	throughputGain := frequencyImprovement * 1.2 // Estimated throughput gain
+	throughputGain := frequencyImprovement * 1.2
 	latencyReduction := time.Duration(float64(responseTime) * (1.0 - (1.0 / frequencyImprovement)))
 
 	result := &DynamicAnchorResult{
@@ -415,7 +369,6 @@ func (dam *DynamicAnchorManager) executeDynamicAnchor(candidate *AnchorCandidate
 		LatencyReduction:     latencyReduction,
 	}
 
-	// Update active anchor
 	if anchor, exists := dam.activeAnchors[candidate.NodeID]; exists {
 		anchor.LastActivity = time.Now()
 		anchor.ResponseTime = responseTime
@@ -427,24 +380,21 @@ func (dam *DynamicAnchorManager) executeDynamicAnchor(candidate *AnchorCandidate
 	return result
 }
 
-// calculateDynamicProcessingTime calculates processing time for dynamic anchor
 func (dam *DynamicAnchorManager) calculateDynamicProcessingTime(candidate *AnchorCandidate) time.Duration {
-	baseTime := time.Millisecond * 30 // Base processing time
+	baseTime := time.Millisecond * 30
 
-	// Adjust based on frequency multiplier
 	frequencyFactor := 1.0 / dam.currentFrequency
 	if frequencyFactor < 0.5 {
-		frequencyFactor = 0.5 // Minimum factor
+		frequencyFactor = 0.5
 	}
 
 	return time.Duration(float64(baseTime) * frequencyFactor)
 }
 
-// roundTimeoutMonitor monitors round timeouts
 func (dam *DynamicAnchorManager) roundTimeoutMonitor() {
 	defer dam.wg.Done()
 
-	ticker := time.NewTicker(dam.config.RoundTimeout / 2) // Check at half timeout interval
+	ticker := time.NewTicker(dam.config.RoundTimeout / 2)
 	defer ticker.Stop()
 
 	for {
@@ -457,7 +407,6 @@ func (dam *DynamicAnchorManager) roundTimeoutMonitor() {
 	}
 }
 
-// checkRoundTimeouts checks for round timeouts
 func (dam *DynamicAnchorManager) checkRoundTimeouts() {
 	dam.scheduleMutex.Lock()
 	defer dam.scheduleMutex.Unlock()
@@ -469,7 +418,6 @@ func (dam *DynamicAnchorManager) checkRoundTimeouts() {
 		if now.Sub(timeout.StartTime) > timeout.Timeout {
 			timeout.IsExpired = true
 
-			// Call timeout callbacks
 			for _, callback := range timeout.Callbacks {
 				callback(timeout.RoundID)
 			}
@@ -483,13 +431,11 @@ func (dam *DynamicAnchorManager) checkRoundTimeouts() {
 		}
 	}
 
-	// Clean up expired timeouts
 	for _, round := range toDelete {
 		delete(dam.roundTimeouts, round)
 	}
 }
 
-// isRoundTimedOut checks if a round has timed out
 func (dam *DynamicAnchorManager) isRoundTimedOut(round types.Round) bool {
 	dam.scheduleMutex.RLock()
 	defer dam.scheduleMutex.RUnlock()
@@ -500,7 +446,6 @@ func (dam *DynamicAnchorManager) isRoundTimedOut(round types.Round) bool {
 	return false
 }
 
-// SetRoundTimeout sets a timeout for a specific round
 func (dam *DynamicAnchorManager) SetRoundTimeout(round types.Round, timeout time.Duration, callback func(string)) {
 	dam.scheduleMutex.Lock()
 	defer dam.scheduleMutex.Unlock()
@@ -516,11 +461,10 @@ func (dam *DynamicAnchorManager) SetRoundTimeout(round types.Round, timeout time
 	dam.roundTimeouts[round] = roundTimeout
 }
 
-// frequencyController runs the adaptive frequency controller
 func (dam *DynamicAnchorManager) frequencyController() {
 	defer dam.wg.Done()
 
-	ticker := time.NewTicker(time.Second * 5) // Adjust frequency every 5 seconds
+	ticker := time.NewTicker(time.Second * 5)
 	defer ticker.Stop()
 
 	for {
@@ -533,17 +477,13 @@ func (dam *DynamicAnchorManager) frequencyController() {
 	}
 }
 
-// runFrequencyControl runs one iteration of frequency control
 func (dam *DynamicAnchorManager) runFrequencyControl() {
-	// This is called by adjustAnchorFrequency
-	// Additional control logic can be added here
 }
 
-// performanceMonitor monitors performance metrics
 func (dam *DynamicAnchorManager) performanceMonitor() {
 	defer dam.wg.Done()
 
-	ticker := time.NewTicker(time.Second * 10) // Monitor every 10 seconds
+	ticker := time.NewTicker(time.Second * 10)
 	defer ticker.Stop()
 
 	for {
@@ -556,7 +496,6 @@ func (dam *DynamicAnchorManager) performanceMonitor() {
 	}
 }
 
-// logPerformanceMetrics logs current performance metrics
 func (dam *DynamicAnchorManager) logPerformanceMetrics() {
 	metrics := dam.getCurrentMetrics()
 
@@ -571,7 +510,6 @@ func (dam *DynamicAnchorManager) logPerformanceMetrics() {
 	)
 }
 
-// getCurrentMetrics gets current performance metrics
 func (dam *DynamicAnchorManager) getCurrentMetrics() struct {
 	throughput float64
 	latency    time.Duration
@@ -597,7 +535,6 @@ func (dam *DynamicAnchorManager) getCurrentMetrics() struct {
 	}
 }
 
-// addFrequencyMeasurement adds a frequency measurement to history
 func (dam *DynamicAnchorManager) addFrequencyMeasurement(measurement FrequencyMeasurement) {
 	dam.frequencyHistory = append(dam.frequencyHistory, measurement)
 	if len(dam.frequencyHistory) > 100 {
@@ -605,7 +542,6 @@ func (dam *DynamicAnchorManager) addFrequencyMeasurement(measurement FrequencyMe
 	}
 }
 
-// adjustFrequency adjusts frequency using PID control
 func (afc *AdaptiveFrequencyController) adjustFrequency(metrics struct {
 	throughput float64
 	latency    time.Duration
@@ -615,50 +551,41 @@ func (afc *AdaptiveFrequencyController) adjustFrequency(metrics struct {
 	now := time.Now()
 	dt := now.Sub(afc.lastAdjustment).Seconds()
 
-	if dt < 1.0 { // Don't adjust too frequently
+	if dt < 1.0 {
 		return currentFrequency
 	}
 
-	// Calculate error terms
 	throughputError := (afc.targetThroughput - metrics.throughput) / afc.targetThroughput
 	latencyError := (metrics.latency.Seconds() - afc.targetLatency.Seconds()) / afc.targetLatency.Seconds()
 
-	// Combined error (weighted)
 	error := throughputError*0.6 + latencyError*0.4
 
-	// PID terms
 	proportional := afc.kp * error
 	afc.errorIntegral += error * dt
 	integral := afc.ki * afc.errorIntegral
 	derivative := afc.kd * (error - afc.lastError) / dt
 
-	// PID output
 	pidOutput := proportional + integral + derivative
 
-	// Calculate new frequency
 	adjustment := pidOutput * afc.adjustmentRate
 	newFrequency := currentFrequency * (1.0 + adjustment)
 
-	// Apply bounds
 	if newFrequency > afc.maxFrequency {
 		newFrequency = afc.maxFrequency
 	} else if newFrequency < afc.minFrequency {
 		newFrequency = afc.minFrequency
 	}
 
-	// Update state
 	afc.lastError = error
 	afc.lastAdjustment = now
 
 	return newFrequency
 }
 
-// updateMetrics updates dynamic anchor metrics
 func (dam *DynamicAnchorManager) updateMetrics(result *DynamicAnchorResult) {
 	atomic.AddInt64(&dam.totalAnchors, 1)
 
 	if result.Success {
-		// Update average response time
 		alpha := 0.1
 		if dam.avgResponseTime == 0 {
 			dam.avgResponseTime = result.ResponseTime
@@ -670,7 +597,6 @@ func (dam *DynamicAnchorManager) updateMetrics(result *DynamicAnchorResult) {
 	}
 }
 
-// GetStats returns comprehensive dynamic anchor statistics
 func (dam *DynamicAnchorManager) GetStats() map[string]interface{} {
 	dam.scheduleMutex.RLock()
 	scheduleCount := len(dam.anchorSchedule)

@@ -12,29 +12,24 @@ type AdaptiveTimeout struct {
 	minTimeout     time.Duration
 	adjustmentRate float64
 
-	// Statistics for adjustment
 	recentLatencies []time.Duration
 	avgLatency      time.Duration
 
-	// Shoal++ enhancements
 	fastCommitTimeouts    []time.Duration
 	dynamicAnchorTimeouts []time.Duration
 	parallelDAGTimeouts   []time.Duration
-	roundTimeouts         map[string]time.Duration // Track timeouts per round
+	roundTimeouts         map[string]time.Duration
 
-	// Enhanced statistics
 	latencyP50 time.Duration
 	latencyP95 time.Duration
 	latencyP99 time.Duration
 
-	// Network condition awareness
 	networkCongestionFactor float64
 	byzantineFaultFactor    float64
 
 	mu sync.RWMutex
 }
 
-// NewAdaptiveTimeout creates a new adaptive timeout manager with Shoal++ enhancements
 func NewAdaptiveTimeout(config *ShoalPPConfig) *AdaptiveTimeout {
 	return &AdaptiveTimeout{
 		baseTimeout:             config.BaseTimeout,
@@ -42,7 +37,7 @@ func NewAdaptiveTimeout(config *ShoalPPConfig) *AdaptiveTimeout {
 		maxTimeout:              config.MaxTimeout,
 		minTimeout:              config.MinTimeout,
 		adjustmentRate:          config.TimeoutAdjustmentRate,
-		recentLatencies:         make([]time.Duration, 0, 20), // Increased capacity for better statistics
+		recentLatencies:         make([]time.Duration, 0, 20),
 		fastCommitTimeouts:      make([]time.Duration, 0, 10),
 		dynamicAnchorTimeouts:   make([]time.Duration, 0, 10),
 		parallelDAGTimeouts:     make([]time.Duration, 0, 10),
@@ -52,12 +47,10 @@ func NewAdaptiveTimeout(config *ShoalPPConfig) *AdaptiveTimeout {
 	}
 }
 
-// UpdateLatency updates the timeout based on observed latency with Shoal++ enhancements
 func (at *AdaptiveTimeout) UpdateLatency(latency time.Duration) {
 	at.mu.Lock()
 	defer at.mu.Unlock()
 
-	// Filter out extreme outliers (more than 50x average)
 	if at.avgLatency > 0 && latency > at.avgLatency*50 {
 		return
 	}
@@ -67,30 +60,18 @@ func (at *AdaptiveTimeout) UpdateLatency(latency time.Duration) {
 		at.recentLatencies = at.recentLatencies[1:]
 	}
 
-	// Calculate enhanced statistics
 	at.calculateEnhancedStatistics()
-
-	// Use P95 latency for timeout calculation (more robust than P99)
-	targetTimeout := time.Duration(float64(at.latencyP95) * 2.0) // 2x P95 for safety margin
-
-	// Apply network condition adjustments
+	targetTimeout := time.Duration(float64(at.latencyP95) * 2.0)
 	targetTimeout = time.Duration(float64(targetTimeout) * at.networkCongestionFactor * at.byzantineFaultFactor)
-
-	// Calculate adjustment with enhanced responsiveness
 	diff := targetTimeout - at.currentTimeout
-
-	// Faster adjustment when timeout is too low, slower when too high
 	adjustmentRate := at.adjustmentRate
 	if targetTimeout > at.currentTimeout {
-		adjustmentRate *= 2.0 // Faster increase for safety
+		adjustmentRate *= 2.0
 	} else {
-		adjustmentRate *= 0.5 // Slower decrease to avoid oscillation
+		adjustmentRate *= 0.5
 	}
-
 	adjustment := time.Duration(float64(diff) * adjustmentRate)
 	at.currentTimeout += adjustment
-
-	// Enforce bounds with enhanced hysteresis
 	if at.currentTimeout > at.maxTimeout {
 		at.currentTimeout = at.maxTimeout
 	} else if at.currentTimeout < at.minTimeout {
@@ -98,7 +79,6 @@ func (at *AdaptiveTimeout) UpdateLatency(latency time.Duration) {
 	}
 }
 
-// UpdateFastCommitLatency updates latency specifically for fast commit operations
 func (at *AdaptiveTimeout) UpdateFastCommitLatency(latency time.Duration) {
 	at.mu.Lock()
 	defer at.mu.Unlock()
@@ -109,7 +89,6 @@ func (at *AdaptiveTimeout) UpdateFastCommitLatency(latency time.Duration) {
 	}
 }
 
-// UpdateDynamicAnchorLatency updates latency for dynamic anchor operations
 func (at *AdaptiveTimeout) UpdateDynamicAnchorLatency(latency time.Duration) {
 	at.mu.Lock()
 	defer at.mu.Unlock()
@@ -120,7 +99,6 @@ func (at *AdaptiveTimeout) UpdateDynamicAnchorLatency(latency time.Duration) {
 	}
 }
 
-// UpdateParallelDAGLatency updates latency for parallel DAG operations
 func (at *AdaptiveTimeout) UpdateParallelDAGLatency(latency time.Duration) {
 	at.mu.Lock()
 	defer at.mu.Unlock()
@@ -131,20 +109,15 @@ func (at *AdaptiveTimeout) UpdateParallelDAGLatency(latency time.Duration) {
 	}
 }
 
-// SetRoundTimeout sets a specific timeout for a round
 func (at *AdaptiveTimeout) SetRoundTimeout(roundID string, timeout time.Duration) {
 	at.mu.Lock()
 	defer at.mu.Unlock()
 
 	at.roundTimeouts[roundID] = timeout
 
-	// Clean up old round timeouts (keep only last 50)
 	if len(at.roundTimeouts) > 50 {
-		// Remove oldest entries
 		oldestTime := time.Now().Add(-time.Minute * 10)
 		for roundID := range at.roundTimeouts {
-			// Simple cleanup based on round ID pattern (assuming timestamp in ID)
-			// In a real implementation, you'd have a proper cleanup mechanism
 			if len(at.roundTimeouts) <= 50 {
 				break
 			}
@@ -153,7 +126,6 @@ func (at *AdaptiveTimeout) SetRoundTimeout(roundID string, timeout time.Duration
 	}
 }
 
-// GetRoundTimeout gets the timeout for a specific round
 func (at *AdaptiveTimeout) GetRoundTimeout(roundID string) time.Duration {
 	at.mu.RLock()
 	defer at.mu.RUnlock()
@@ -164,16 +136,13 @@ func (at *AdaptiveTimeout) GetRoundTimeout(roundID string) time.Duration {
 	return at.currentTimeout
 }
 
-// UpdateNetworkCongestion updates the network congestion factor
 func (at *AdaptiveTimeout) UpdateNetworkCongestion(congestionLevel float64) {
 	at.mu.Lock()
 	defer at.mu.Unlock()
 
-	// Smooth adjustment of congestion factor
 	alpha := 0.1
 	at.networkCongestionFactor = at.networkCongestionFactor*(1-alpha) + congestionLevel*alpha
 
-	// Bounds: 0.5x to 3.0x adjustment
 	if at.networkCongestionFactor < 0.5 {
 		at.networkCongestionFactor = 0.5
 	} else if at.networkCongestionFactor > 3.0 {
@@ -181,16 +150,13 @@ func (at *AdaptiveTimeout) UpdateNetworkCongestion(congestionLevel float64) {
 	}
 }
 
-// UpdateByzantineFaultDetection updates the Byzantine fault factor
 func (at *AdaptiveTimeout) UpdateByzantineFaultDetection(byzantineLevel float64) {
 	at.mu.Lock()
 	defer at.mu.Unlock()
 
-	// Smooth adjustment of Byzantine fault factor
-	alpha := 0.05 // Slower adjustment for Byzantine detection
+	alpha := 0.05
 	at.byzantineFaultFactor = at.byzantineFaultFactor*(1-alpha) + byzantineLevel*alpha
 
-	// Bounds: 1.0x to 2.0x adjustment (Byzantine behavior requires more conservative timeouts)
 	if at.byzantineFaultFactor < 1.0 {
 		at.byzantineFaultFactor = 1.0
 	} else if at.byzantineFaultFactor > 2.0 {
@@ -198,7 +164,6 @@ func (at *AdaptiveTimeout) UpdateByzantineFaultDetection(byzantineLevel float64)
 	}
 }
 
-// calculateEnhancedStatistics calculates enhanced latency statistics
 func (at *AdaptiveTimeout) calculateEnhancedStatistics() {
 	if len(at.recentLatencies) < 3 {
 		at.avgLatency = at.calculateAverage(at.recentLatencies)
@@ -208,25 +173,19 @@ func (at *AdaptiveTimeout) calculateEnhancedStatistics() {
 		return
 	}
 
-	// Calculate average
 	at.avgLatency = at.calculateAverage(at.recentLatencies)
-
-	// Calculate percentiles
 	sorted := make([]time.Duration, len(at.recentLatencies))
 	copy(sorted, at.recentLatencies)
 	at.quickSort(sorted, 0, len(sorted)-1)
-
 	at.latencyP50 = at.calculatePercentile(sorted, 0.50)
 	at.latencyP95 = at.calculatePercentile(sorted, 0.95)
 	at.latencyP99 = at.calculatePercentile(sorted, 0.99)
 }
 
-// calculateAverage calculates the average of a slice of durations
 func (at *AdaptiveTimeout) calculateAverage(durations []time.Duration) time.Duration {
 	if len(durations) == 0 {
 		return 0
 	}
-
 	total := time.Duration(0)
 	for _, d := range durations {
 		total += d
@@ -234,12 +193,10 @@ func (at *AdaptiveTimeout) calculateAverage(durations []time.Duration) time.Dura
 	return total / time.Duration(len(durations))
 }
 
-// calculatePercentile calculates the percentile of a sorted slice
 func (at *AdaptiveTimeout) calculatePercentile(sorted []time.Duration, percentile float64) time.Duration {
 	if len(sorted) == 0 {
 		return 0
 	}
-
 	index := int(float64(len(sorted)) * percentile)
 	if index >= len(sorted) {
 		index = len(sorted) - 1
@@ -247,7 +204,6 @@ func (at *AdaptiveTimeout) calculatePercentile(sorted []time.Duration, percentil
 	return sorted[index]
 }
 
-// quickSort implements quicksort for time.Duration slices
 func (at *AdaptiveTimeout) quickSort(arr []time.Duration, low, high int) {
 	if low < high {
 		pi := at.partition(arr, low, high)
@@ -256,11 +212,9 @@ func (at *AdaptiveTimeout) quickSort(arr []time.Duration, low, high int) {
 	}
 }
 
-// partition is the partition function for quicksort
 func (at *AdaptiveTimeout) partition(arr []time.Duration, low, high int) int {
 	pivot := arr[high]
 	i := low - 1
-
 	for j := low; j < high; j++ {
 		if arr[j] <= pivot {
 			i++
@@ -271,29 +225,23 @@ func (at *AdaptiveTimeout) partition(arr []time.Duration, low, high int) int {
 	return i + 1
 }
 
-// GetTimeout returns the current adaptive timeout
 func (at *AdaptiveTimeout) GetTimeout() time.Duration {
 	at.mu.RLock()
 	defer at.mu.RUnlock()
 	return at.currentTimeout
 }
 
-// GetFastCommitTimeout returns the timeout optimized for fast commit operations
 func (at *AdaptiveTimeout) GetFastCommitTimeout() time.Duration {
 	at.mu.RLock()
 	defer at.mu.RUnlock()
 
 	if len(at.fastCommitTimeouts) > 0 {
 		avgFastCommit := at.calculateAverage(at.fastCommitTimeouts)
-		// Fast commit should be more aggressive (1.5x average instead of 2x)
 		return time.Duration(float64(avgFastCommit) * 1.5)
 	}
-
-	// Fallback to standard timeout with reduction for fast commit
 	return time.Duration(float64(at.currentTimeout) * 0.75)
 }
 
-// GetDynamicAnchorTimeout returns the timeout for dynamic anchor operations
 func (at *AdaptiveTimeout) GetDynamicAnchorTimeout() time.Duration {
 	at.mu.RLock()
 	defer at.mu.RUnlock()
@@ -302,32 +250,26 @@ func (at *AdaptiveTimeout) GetDynamicAnchorTimeout() time.Duration {
 		avgDynamicAnchor := at.calculateAverage(at.dynamicAnchorTimeouts)
 		return time.Duration(float64(avgDynamicAnchor) * 1.8)
 	}
-
 	return at.currentTimeout
 }
 
-// GetParallelDAGTimeout returns the timeout for parallel DAG operations
 func (at *AdaptiveTimeout) GetParallelDAGTimeout() time.Duration {
 	at.mu.RLock()
 	defer at.mu.RUnlock()
 
 	if len(at.parallelDAGTimeouts) > 0 {
 		avgParallelDAG := at.calculateAverage(at.parallelDAGTimeouts)
-		// Parallel DAG operations can be more aggressive due to parallelism
 		return time.Duration(float64(avgParallelDAG) * 1.3)
 	}
-
 	return time.Duration(float64(at.currentTimeout) * 0.8)
 }
 
-// GetAverageLatency returns the current average latency
 func (at *AdaptiveTimeout) GetAverageLatency() time.Duration {
 	at.mu.RLock()
 	defer at.mu.RUnlock()
 	return at.avgLatency
 }
 
-// GetLatencyStatistics returns comprehensive latency statistics
 func (at *AdaptiveTimeout) GetLatencyStatistics() map[string]time.Duration {
 	at.mu.RLock()
 	defer at.mu.RUnlock()
@@ -342,12 +284,10 @@ func (at *AdaptiveTimeout) GetLatencyStatistics() map[string]time.Duration {
 	}
 }
 
-// getMinLatency calculates minimum latency from recent observations
 func (at *AdaptiveTimeout) getMinLatency() time.Duration {
 	if len(at.recentLatencies) == 0 {
 		return 0
 	}
-
 	min := at.recentLatencies[0]
 	for _, latency := range at.recentLatencies[1:] {
 		if latency < min {
@@ -357,12 +297,10 @@ func (at *AdaptiveTimeout) getMinLatency() time.Duration {
 	return min
 }
 
-// getMaxLatency calculates maximum latency from recent observations
 func (at *AdaptiveTimeout) getMaxLatency() time.Duration {
 	if len(at.recentLatencies) == 0 {
 		return 0
 	}
-
 	max := at.recentLatencies[0]
 	for _, latency := range at.recentLatencies[1:] {
 		if latency > max {
@@ -372,7 +310,6 @@ func (at *AdaptiveTimeout) getMaxLatency() time.Duration {
 	return max
 }
 
-// GetNetworkConditionFactors returns current network condition adjustment factors
 func (at *AdaptiveTimeout) GetNetworkConditionFactors() map[string]float64 {
 	at.mu.RLock()
 	defer at.mu.RUnlock()
@@ -384,7 +321,6 @@ func (at *AdaptiveTimeout) GetNetworkConditionFactors() map[string]float64 {
 	}
 }
 
-// Reset resets the adaptive timeout to its base configuration
 func (at *AdaptiveTimeout) Reset() {
 	at.mu.Lock()
 	defer at.mu.Unlock()
