@@ -10,15 +10,13 @@ import (
 	bullsharktypes "github.com/vietchain/vniccss/pkg/bullshark/types"
 	"github.com/vietchain/vniccss/pkg/narwhal/core"
 	"github.com/vietchain/vniccss/pkg/narwhal/types"
-	"github.com/vietchain/vniccss/pkg/shoal"
 )
 
 // Selector handles the selection of anchor certificates for ordering
 type Selector struct {
-	logger         *zap.Logger
-	mempool        *core.DAGMempool
-	strategy       *bullsharktypes.AnchorSelectionStrategy
-	shoalFramework *shoal.ShoalFramework // Shoal framework integration
+	logger   *zap.Logger
+	mempool  *core.DAGMempool
+	strategy *bullsharktypes.AnchorSelectionStrategy
 }
 
 // NewSelector creates a new anchor selector
@@ -32,10 +30,9 @@ func NewSelector(
 	}
 
 	return &Selector{
-		logger:         logger,
-		mempool:        mempool,
-		strategy:       strategy,
-		shoalFramework: nil, // Will be set via SetShoalFramework
+		logger:   logger,
+		mempool:  mempool,
+		strategy: strategy,
 	}
 }
 
@@ -43,7 +40,6 @@ func NewSelector(
 func NewSelectorWithShoal(
 	mempool *core.DAGMempool,
 	strategy *bullsharktypes.AnchorSelectionStrategy,
-	shoalFramework *shoal.ShoalFramework,
 	logger *zap.Logger,
 ) *Selector {
 	if strategy == nil {
@@ -51,16 +47,10 @@ func NewSelectorWithShoal(
 	}
 
 	return &Selector{
-		logger:         logger,
-		mempool:        mempool,
-		strategy:       strategy,
-		shoalFramework: shoalFramework,
+		logger:   logger,
+		mempool:  mempool,
+		strategy: strategy,
 	}
-}
-
-// SetShoalFramework sets the Shoal framework for enhanced anchor selection
-func (s *Selector) SetShoalFramework(framework *shoal.ShoalFramework) {
-	s.shoalFramework = framework
 }
 
 // SelectAnchors selects anchor certificates for a given round
@@ -69,7 +59,6 @@ func (s *Selector) SelectAnchors(round types.Round) ([]*bullsharktypes.Anchor, e
 	s.logger.Debug("Selecting anchors for round",
 		zap.Uint64("round", uint64(round)),
 		zap.Int("max_anchors", s.strategy.MaxAnchorsPerRound),
-		zap.Bool("shoal_enabled", s.shoalFramework != nil),
 	)
 
 	// Get all certificates for the round
@@ -87,25 +76,8 @@ func (s *Selector) SelectAnchors(round types.Round) ([]*bullsharktypes.Anchor, e
 	)
 
 	var sortedCerts []*types.Certificate
-	var err error
 
-	// Use Shoal's enhanced anchor selection if available
-	if s.shoalFramework != nil && s.shoalFramework.IsRunning() {
-		sortedCerts, err = s.shoalFramework.GetAnchorSelector().SelectAnchors(certificates, s.strategy.MaxAnchorsPerRound)
-		if err != nil {
-			s.logger.Warn("Shoal anchor selection failed, falling back to default",
-				zap.Error(err),
-			)
-			sortedCerts = s.sortCertificatesForSelection(certificates)
-		} else {
-			s.logger.Debug("Used Shoal enhanced anchor selection",
-				zap.Int("selected_count", len(sortedCerts)),
-			)
-		}
-	} else {
-		// Fallback to traditional selection
-		sortedCerts = s.sortCertificatesForSelection(certificates)
-	}
+	sortedCerts = s.sortCertificatesForSelection(certificates)
 
 	// Select anchors based on strategy
 	selectedCount := s.strategy.MaxAnchorsPerRound
@@ -124,16 +96,6 @@ func (s *Selector) SelectAnchors(round types.Round) ([]*bullsharktypes.Anchor, e
 			SelectionTime: time.Now(),
 		}
 		anchors = append(anchors, anchor)
-
-		// Update reputation for selected anchor authors if Shoal is enabled
-		if s.shoalFramework != nil {
-			s.shoalFramework.UpdateReputation(sortedCerts[i].Header.Author, time.Since(start), true)
-		}
-	}
-
-	// Update performance metrics if Shoal is enabled
-	if s.shoalFramework != nil {
-		s.shoalFramework.UpdateLatency(time.Since(start))
 	}
 
 	s.logger.Info("Selected anchors for round",

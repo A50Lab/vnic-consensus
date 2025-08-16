@@ -21,17 +21,15 @@ import (
 	narwhal "github.com/vietchain/vniccss/pkg/narwhal/core"
 	narwhaltypes "github.com/vietchain/vniccss/pkg/narwhal/types"
 	"github.com/vietchain/vniccss/pkg/rpc"
-	"github.com/vietchain/vniccss/pkg/shoal"
 )
 
 type Node struct {
-	config           *config.Config
-	logger           *zap.Logger
-	abciClient       *abci.Client
-	rpcServer        *rpc.Server
-	narwhal          *narwhal.Narwhal
-	bullshark        *bullshark.Bullshark
-	shoalIntegration *shoal.ShoalIntegration
+	config     *config.Config
+	logger     *zap.Logger
+	abciClient *abci.Client
+	rpcServer  *rpc.Server
+	narwhal    *narwhal.Narwhal
+	bullshark  *bullshark.Bullshark
 }
 
 func NewNode(cfg *config.Config) (*Node, error) {
@@ -44,14 +42,9 @@ func NewNode(cfg *config.Config) (*Node, error) {
 		return nil, fmt.Errorf("failed to create logger: %w", err)
 	}
 
-	// Initialize Shoal integration
-	shoalConfig := shoal.DefaultShoalConfig()
-	shoalIntegration := shoal.NewShoalIntegration(shoalConfig, logger.Named("shoal"))
-
 	return &Node{
-		config:           cfg,
-		logger:           logger,
-		shoalIntegration: shoalIntegration,
+		config: cfg,
+		logger: logger,
 	}, nil
 }
 
@@ -81,11 +74,6 @@ func (n *Node) Start() error {
 	// Initialize RPC server
 	if err := n.initRPCServer(); err != nil {
 		return fmt.Errorf("failed to initialize RPC server: %w", err)
-	}
-
-	// Start Shoal integration
-	if err := n.shoalIntegration.Start(); err != nil {
-		return fmt.Errorf("failed to start Shoal integration: %w", err)
 	}
 
 	// Start Narwhal
@@ -278,11 +266,6 @@ func (n *Node) initBullshark() error {
 		n.logger,               // Logger
 	)
 
-	// Integrate Shoal with Bullshark components
-	n.shoalIntegration.SetBullsharkEngine(n.bullshark.GetEngine())
-	n.shoalIntegration.SetBullsharkSelector(n.bullshark.GetSelector())
-	n.shoalIntegration.SetNarwhalPrimary(n.narwhal.GetPrimary())
-
 	// Initialize Bullshark consensus state with current ABCI state
 	abciState := n.abciClient.GetState()
 	n.logger.Info("Initializing Bullshark with ABCI state",
@@ -306,11 +289,6 @@ func (n *Node) initBullshark() error {
 				zap.String("block_hash", block.BlockHash.String()),
 			)
 
-			// Update Shoal metrics with block creation latency
-			if n.shoalIntegration.IsRunning() {
-				blockLatency := time.Since(block.Timestamp)
-				n.shoalIntegration.UpdateLatency(blockLatency)
-			}
 		},
 		func(result *bullshark.ExecutionResult) {
 			n.logger.Info("Block executed by Bullshark",
@@ -352,17 +330,6 @@ func (n *Node) Stop() error {
 		}
 	}
 
-	// Log final Shoal metrics before shutdown
-	if n.shoalIntegration != nil && n.shoalIntegration.IsRunning() {
-		metrics := n.shoalIntegration.GetMetrics()
-		n.logger.Info("Final Shoal metrics",
-			zap.Duration("avg_latency", metrics.AvgLatency),
-			zap.Float64("messages_per_second", metrics.MessagesPerSecond),
-			zap.Float64("error_rate", metrics.ErrorRate),
-			zap.Duration("adaptive_timeout", metrics.AdaptiveTimeoutValue),
-		)
-	}
-
 	if n.rpcServer != nil {
 		if err := n.rpcServer.Stop(); err != nil {
 			n.logger.Error("Failed to stop RPC server", zap.Error(err))
@@ -381,32 +348,10 @@ func (n *Node) Stop() error {
 		}
 	}
 
-	if n.shoalIntegration != nil {
-		if err := n.shoalIntegration.Stop(); err != nil {
-			n.logger.Error("Failed to stop Shoal integration", zap.Error(err))
-		}
-	}
-
 	if n.abciClient != nil {
 		n.abciClient.Stop()
 	}
 
 	n.logger.Info("Node stopped")
 	return nil
-}
-
-// GetShoalMetrics returns current Shoal performance metrics
-func (n *Node) GetShoalMetrics() shoal.PerformanceMetrics {
-	if n.shoalIntegration != nil {
-		return n.shoalIntegration.GetMetrics()
-	}
-	return shoal.PerformanceMetrics{}
-}
-
-// GetShoalStats returns detailed Shoal statistics
-func (n *Node) GetShoalStats() map[string]interface{} {
-	if n.shoalIntegration != nil {
-		return n.shoalIntegration.GetDetailedStats()
-	}
-	return map[string]interface{}{"shoal_enabled": false}
 }
