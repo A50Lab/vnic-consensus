@@ -93,6 +93,19 @@ func (n *Node) Start() error {
 		return fmt.Errorf("failed to start Narwhal: %w", err)
 	}
 
+	// Connect to bootstrap peers if specified
+	if len(n.config.P2P.BootstrapPeers) > 0 {
+		n.logger.Info("Connecting to bootstrap peers",
+			zap.Strings("peers", n.config.P2P.BootstrapPeers),
+		)
+		
+		network := n.narwhal.GetNetwork()
+		if err := network.ConnectToPeers(n.config.P2P.BootstrapPeers); err != nil {
+			n.logger.Warn("Failed to connect to some bootstrap peers", zap.Error(err))
+			// Don't fail startup if peer connection fails
+		}
+	}
+
 	// Start Bullshark
 	if err := n.bullshark.Start(); err != nil {
 		return fmt.Errorf("failed to start Bullshark: %w", err)
@@ -218,7 +231,7 @@ func (n *Node) initNarwhal() error {
 		NodeID:       nodeID,
 		PrivateKey:   privateKey,
 		PublicKey:    privateKey.PubKey(),
-		ListenAddr:   "/ip4/127.0.0.1/tcp/9000", // P2P listen address
+		ListenAddr:   n.config.P2P.ListenAddress, // P2P listen address from config
 		Workers:      workers,
 		Committee:    []narwhaltypes.PrimaryInfo{primaryInfo}, // Single node committee
 		BatchSize:    50,

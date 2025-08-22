@@ -8,6 +8,13 @@ type Config struct {
 	HomeDir        string
 	ConnectionMode string
 	RPC            RPCConfig
+	P2P            P2PConfig
+}
+
+type P2PConfig struct {
+	ListenAddress string
+	BootstrapPeers []string
+	MaxPeers      int
 }
 
 type RPCConfig struct {
@@ -46,5 +53,13 @@ func DefaultRPCConfig() RPCConfig {
 		MaxHeaderBytes:            1048576,
 		TLSCertFile:               "",
 		TLSKeyFile:                "",
+	}
+}
+
+func DefaultP2PConfig() P2PConfig {
+	return P2PConfig{
+		ListenAddress:  "/ip4/127.0.0.1/tcp/9000",
+		BootstrapPeers: []string{},
+		MaxPeers:       50,
 	}
 }

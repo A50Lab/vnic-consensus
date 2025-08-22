@@ -226,10 +226,60 @@ func (n *Network) sendToPeer(peerID peer.ID, protocolID string, msg interface{})
 	return nil
 }
 
-// Simplified discovery for Phase 2 - can be enhanced later
+// ConnectToPeer connects to a specific peer by multiaddr
+func (n *Network) ConnectToPeer(addr string) error {
+	maddr, err := multiaddr.NewMultiaddr(addr)
+	if err != nil {
+		return fmt.Errorf("invalid multiaddr: %w", err)
+	}
+
+	peerinfo, err := peer.AddrInfoFromP2pAddr(maddr)
+	if err != nil {
+		return fmt.Errorf("failed to get peer info: %w", err)
+	}
+
+	if err := n.host.Connect(n.ctx, *peerinfo); err != nil {
+		return fmt.Errorf("failed to connect to peer: %w", err)
+	}
+
+	n.peersMutex.Lock()
+	n.peers[peerinfo.ID] = types.NodeID(peerinfo.ID.String())
+	n.peersMutex.Unlock()
+
+	n.logger.Info("Connected to peer",
+		zap.String("peer_id", peerinfo.ID.String()),
+		zap.String("addr", addr),
+	)
+
+	return nil
+}
+
+// ConnectToPeers connects to multiple peers from a list of addresses
+func (n *Network) ConnectToPeers(addrs []string) error {
+	var errors []error
+	
+	for _, addr := range addrs {
+		if err := n.ConnectToPeer(addr); err != nil {
+			n.logger.Error("Failed to connect to peer",
+				zap.String("addr", addr),
+				zap.Error(err),
+			)
+			errors = append(errors, err)
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("failed to connect to %d peers", len(errors))
+	}
+
+	return nil
+}
+
 // startDiscovery starts discovery for finding other nodes
 func (n *Network) startDiscovery() error {
-	// For Phase 2, we skip mDNS discovery to focus on core Narwhal functionality
+	// For now, we use manual peer connection
+	// In future versions, we can add mDNS or DHT discovery
+	n.logger.Info("Peer discovery started (manual connection mode)")
 	return nil
 }
 

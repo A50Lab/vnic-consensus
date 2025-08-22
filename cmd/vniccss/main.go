@@ -55,6 +55,17 @@ func main() {
 				Value:    "tcp://0.0.0.0:26657",
 				Required: false,
 			},
+			&cli.StringFlag{
+				Name:     "p2p-listen-addr",
+				Usage:    "Address for P2P networking to listen on",
+				Value:    "/ip4/127.0.0.1/tcp/9000",
+				Required: false,
+			},
+			&cli.StringSliceFlag{
+				Name:     "p2p-peers",
+				Usage:    "List of bootstrap peers to connect to",
+				Required: false,
+			},
 		},
 		Action: run,
 	}
@@ -68,12 +79,17 @@ func run(c *cli.Context) error {
 	rpcConfig := config.DefaultRPCConfig()
 	rpcConfig.ListenAddress = c.String("rpc-listen-addr")
 
+	p2pConfig := config.DefaultP2PConfig()
+	p2pConfig.ListenAddress = c.String("p2p-listen-addr")
+	p2pConfig.BootstrapPeers = c.StringSlice("p2p-peers")
+
 	cfg := &config.Config{
 		AppAddr:        c.String("app-addr"),
 		GenesisFile:    c.String("genesis-file"),
 		HomeDir:        c.String("home-dir"),
 		ConnectionMode: c.String("connection-mode"),
 		RPC:            rpcConfig,
+		P2P:            p2pConfig,
 	}
 
 	fmt.Printf("Starting vniccss consensus engine...\n")
