@@ -1,0 +1,14 @@
+{
+  "name": "cosmos-balance-checker",
+  "version": "1.0.0",
+  "description": "Check Cosmos wallet balance using private key",
+  "main": "check-balance.js",
+  "scripts": {
+    "start": "node check-balance.js"
+  },
+  "dependencies": {
+    "@cosmjs/stargate": "^0.32.4",
+    "@cosmjs/encoding": "^0.32.4",
+    "@cosmjs/crypto": "^0.32.4"
+  }
+}

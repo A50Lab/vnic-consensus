@@ -31,10 +31,10 @@ type Worker struct {
 	wg     sync.WaitGroup
 
 	// Batching
-	currentBatch    []*types.Transaction
-	batchMutex      sync.Mutex
-	batchTimer      *time.Timer
-	lastBatchTime   time.Time
+	currentBatch  []*types.Transaction
+	batchMutex    sync.Mutex
+	batchTimer    *time.Timer
+	lastBatchTime time.Time
 
 	// Callbacks
 	onBatchCreated func(*types.Batch)
@@ -133,6 +133,7 @@ func (w *Worker) AddTransaction(tx *types.Transaction) error {
 	}
 
 	w.logger.Debug("Added transaction to worker batch",
+		zap.String("node_id", string(w.nodeID)),
 		zap.String("tx_hash", tx.Hash.String()),
 		zap.Int("batch_size", len(w.currentBatch)),
 	)
@@ -218,6 +219,7 @@ func (w *Worker) transactionProcessingLoop() {
 			txs := w.mempool.GetPendingTransactions(w.batchSize)
 			if len(txs) > 0 {
 				w.logger.Debug("Processing transactions from mempool",
+					zap.String("node_id", string(w.nodeID)),
 					zap.Int("tx_count", len(txs)),
 				)
 
@@ -302,14 +304,14 @@ func (w *Worker) resetBatchTimer() {
 		// Use a timeout context to prevent hanging
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		select {
 		case <-ctx.Done():
 			w.logger.Warn("Batch timer callback timed out")
 			return
 		default:
 		}
-		
+
 		w.batchMutex.Lock()
 		defer w.batchMutex.Unlock()
 

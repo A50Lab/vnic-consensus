@@ -2,12 +2,14 @@ package rpc
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,24 +17,30 @@ import (
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/crypto/merkle"
+
+	"github.com/cometbft/cometbft/libs/bytes"
 	"github.com/cometbft/cometbft/p2p"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	"github.com/cometbft/cometbft/state"
 	"github.com/cometbft/cometbft/types"
+
 	"github.com/cometbft/cometbft/version"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/spf13/cast"
 	"go.uber.org/zap"
 
 	"github.com/vietchain/vniccss/pkg/abci"
 	"github.com/vietchain/vniccss/pkg/config"
+	narwhal "github.com/vietchain/vniccss/pkg/narwhal/core"
 )
 
 type Server struct {
 	config        config.RPCConfig
 	logger        *zap.Logger
 	abciClient    *abci.Client
+	narwhal       *narwhal.Narwhal
 	httpServer    *http.Server
 	upgrader      websocket.Upgrader
 	subscriptions map[string]*Subscription
@@ -73,11 +81,12 @@ type EventBus struct {
 	mutex       sync.RWMutex
 }
 
-func NewServer(cfg config.RPCConfig, abciClient *abci.Client, logger *zap.Logger) *Server {
+func NewServer(cfg config.RPCConfig, abciClient *abci.Client, narwhal *narwhal.Narwhal, logger *zap.Logger) *Server {
 	return &Server{
 		config:        cfg,
 		logger:        logger,
 		abciClient:    abciClient,
+		narwhal:       narwhal,
 		subscriptions: make(map[string]*Subscription),
 		eventBus:      NewEventBus(),
 		upgrader: websocket.Upgrader{
@@ -99,8 +108,8 @@ func (s *Server) Start(ctx context.Context) error {
 
 	router.HandleFunc("/", s.handleJSONRPC).Methods("POST")
 	router.HandleFunc("/websocket", s.handleWebSocket)
-	router.HandleFunc("/health", s.handleHealth).Methods("GET")
 
+	router.HandleFunc("/health", s.handleHTTPEndpoint("health")).Methods("GET")
 	router.HandleFunc("/status", s.handleHTTPEndpoint("status")).Methods("GET")
 	router.HandleFunc("/genesis", s.handleHTTPEndpoint("genesis")).Methods("GET")
 	router.HandleFunc("/validators", s.handleHTTPEndpoint("validators")).Methods("GET")
@@ -123,9 +132,9 @@ func (s *Server) Start(ctx context.Context) error {
 	router.HandleFunc("/vniccss_info", s.handleHTTPEndpoint("vniccss_info")).Methods("GET")
 
 	// CosmJS compatibility endpoints
-	router.HandleFunc("/cosmos/auth/v1beta1/accounts/{address}", s.handleHTTPEndpoint("cosmos_account")).Methods("GET")
-	router.HandleFunc("/cosmos/bank/v1beta1/balances/{address}", s.handleHTTPEndpoint("cosmos_balances")).Methods("GET")
-	router.HandleFunc("/cosmos/tx/v1beta1/txs/{hash}", s.handleHTTPEndpoint("cosmos_tx")).Methods("GET")
+	router.HandleFunc("/cosmos/auth/v1beta1/accounts/{address}", s.handleCosmosAccount).Methods("GET")
+	router.HandleFunc("/cosmos/bank/v1beta1/balances/{address}", s.handleCosmosBalances).Methods("GET")
+	router.HandleFunc("/cosmos/tx/v1beta1/txs/{hash}", s.handleCosmosTx).Methods("GET")
 
 	corsHandler := handlers.CORS(
 		handlers.AllowedOrigins(s.config.CORSAllowedOrigins),
@@ -179,7 +188,8 @@ func (s *Server) handleHTTPEndpoint(method string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var params interface{}
 
-		if r.Method == "GET" {
+		switch r.Method {
+		case "GET":
 			query := r.URL.Query()
 			paramMap := make(map[string]interface{})
 			for k, v := range query {
@@ -189,8 +199,15 @@ func (s *Server) handleHTTPEndpoint(method string) http.HandlerFunc {
 					paramMap[k] = v
 				}
 			}
+
+			// Extract path variables for cosmos endpoints
+			vars := mux.Vars(r)
+			for k, v := range vars {
+				paramMap[k] = v
+			}
+
 			params = paramMap
-		} else if r.Method == "POST" {
+		case "POST":
 			var body map[string]interface{}
 			if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
 				params = body
@@ -201,7 +218,7 @@ func (s *Server) handleHTTPEndpoint(method string) http.HandlerFunc {
 
 		response := JSONRPCResponse{
 			JSONRPC: "2.0",
-			ID:      1,
+			ID:      -1,
 		}
 
 		if err != nil {
@@ -212,6 +229,8 @@ func (s *Server) handleHTTPEndpoint(method string) http.HandlerFunc {
 		} else {
 			response.Result = result
 		}
+
+		response.Result = s.formatRPCResponse(response.Result)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
@@ -231,7 +250,6 @@ func (s *Server) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := s.handleRPCMethod(r.Context(), req.Method, req.Params)
-
 	if err != nil {
 		s.sendError(w, req.ID, -32603, "Internal error", err.Error())
 		return
@@ -239,7 +257,7 @@ func (s *Server) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	response := JSONRPCResponse{
 		JSONRPC: "2.0",
-		ID:      req.ID,
+		ID:      -1,
 		Result:  result,
 	}
 
@@ -247,8 +265,35 @@ func (s *Server) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func (s *Server) formatRPCResponse(result any) any {
+	tmp := map[string]any{}
+	r, _ := json.Marshal(result)
+	err := json.Unmarshal(r, &tmp)
+	if err != nil {
+		return result
+	}
+
+	for k, v := range tmp {
+		fmt.Println("TMP: ", k, " ", v, " ", reflect.TypeOf(v))
+		if _, ok := v.(map[string]any); ok {
+			tmp[k] = s.formatRPCResponse(v)
+		} else if _, ok := v.(bool); ok {
+			tmp[k] = v
+		} else {
+			tmp[k] = cast.ToString(v)
+		}
+	}
+
+	return tmp
+}
+
 func (s *Server) handleRPCMethod(ctx context.Context, method string, params interface{}) (interface{}, error) {
+	fmt.Println("DEBUG: METHOD: ", method)
+	fmt.Println("DEBUG: PARAMS: ", params)
+
 	switch method {
+	case "health":
+		return s.checkHealth(ctx)
 	case "status":
 		return s.status(ctx)
 	case "genesis":
@@ -306,7 +351,11 @@ func (s *Server) handleRPCMethod(ctx context.Context, method string, params inte
 	}
 }
 
-func (s *Server) status(ctx context.Context) (*coretypes.ResultStatus, error) {
+func (s *Server) checkHealth(ctx context.Context) (interface{}, error) {
+	return nil, nil
+}
+
+func (s *Server) status(ctx context.Context) (*map[string]interface{}, error) {
 	state := s.abciClient.GetState()
 
 	nodeInfo := p2p.DefaultNodeInfo{
@@ -315,11 +364,11 @@ func (s *Server) status(ctx context.Context) (*coretypes.ResultStatus, error) {
 			Block: version.BlockProtocol,
 			App:   0,
 		},
-		DefaultNodeID: "vniccss-node",
+		DefaultNodeID: p2p.PubKeyToID(state.Validators.GetProposer().PubKey),
 		ListenAddr:    s.config.ListenAddress,
 		Network:       state.ChainID,
 		Version:       version.TMCoreSemVer,
-		Channels:      []byte{0x40, 0x20, 0x21, 0x22, 0x23, 0x30, 0x38, 0x00},
+		Channels:      bytes.HexBytes{0x40, 0x20, 0x21, 0x22, 0x23, 0x30, 0x38, 0x60, 0x61, 0x00},
 		Moniker:       "vniccss",
 		Other: p2p.DefaultNodeInfoOther{
 			TxIndex:    "on",
@@ -339,20 +388,73 @@ func (s *Server) status(ctx context.Context) (*coretypes.ResultStatus, error) {
 		CatchingUp:          false,
 	}
 
-	var validatorInfo coretypes.ValidatorInfo
+	var validatorInfo CustomValidatorInfo
 	if state.Validators.Size() > 0 {
 		val := state.Validators.GetProposer()
-		validatorInfo = coretypes.ValidatorInfo{
-			Address:     val.Address,
-			PubKey:      val.PubKey,
-			VotingPower: val.VotingPower,
+
+		// Get the public key bytes and encode as base64
+		pubKeyBytes := val.PubKey.Bytes()
+		pubKeyBase64 := base64.StdEncoding.EncodeToString(pubKeyBytes)
+
+		validatorInfo = CustomValidatorInfo{
+			Address: strings.ToUpper(hex.EncodeToString(val.Address)),
+			PubKey: PubKeyObject{
+				Type:  "tendermint/PubKeyEd25519",
+				Value: pubKeyBase64,
+			},
+			VotingPower: fmt.Sprintf("%d", val.VotingPower*100),
 		}
 	}
 
-	return &coretypes.ResultStatus{
-		NodeInfo:      nodeInfo,
-		SyncInfo:      syncInfo,
-		ValidatorInfo: validatorInfo,
+	// result := map[string]interface{}{
+	// 	"node_info":      nodeInfo,
+	// 	"sync_info":      syncInfo,
+	// 	"validator_info": validatorInfo,
+	// }
+
+	// return &map[string]interface{}{
+	// 	"node_info":      nodeInfo,
+	// 	"sync_info":      syncInfo,
+	// 	"validator_info": validatorInfo,
+	// }, nil
+
+	return &map[string]interface{}{
+		"node_info": map[string]interface{}{
+			"channels":    nodeInfo.Channels,
+			"id":          nodeInfo.DefaultNodeID,
+			"listen_addr": nodeInfo.ListenAddr,
+			"moniker":     nodeInfo.Moniker,
+			"network":     nodeInfo.Network,
+			"other": map[string]interface{}{
+				"rpc_address": nodeInfo.Other.RPCAddress,
+				"tx_index":    nodeInfo.Other.TxIndex,
+			},
+			"protocol_version": map[string]interface{}{
+				"app":   "0",
+				"block": "11",
+				"p2p":   "8",
+			},
+			"version": version.TMCoreSemVer,
+		},
+		"sync_info": map[string]interface{}{
+			"catching_up":           syncInfo.CatchingUp,
+			"earliest_app_hash":     syncInfo.EarliestAppHash,
+			"earliest_block_hash":   syncInfo.EarliestBlockHash,
+			"earliest_block_height": syncInfo.EarliestBlockHeight,
+			"earliest_block_time":   syncInfo.EarliestBlockTime,
+			"latest_app_hash":       syncInfo.LatestAppHash,
+			"latest_block_hash":     syncInfo.LatestBlockHash,
+			"latest_block_height":   syncInfo.LatestBlockHeight,
+			"latest_block_time":     syncInfo.LatestBlockTime,
+		},
+		"validator_info": map[string]interface{}{
+			"address": validatorInfo.Address,
+			"pub_key": map[string]interface{}{
+				"type":  validatorInfo.PubKey.Type,
+				"value": validatorInfo.PubKey.Value,
+			},
+			"voting_power": validatorInfo.VotingPower,
+		},
 	}, nil
 }
 
@@ -671,6 +773,21 @@ func (s *Server) broadcastTxSync(ctx context.Context, params interface{}) (*core
 		return nil, err
 	}
 
+	if response.Code == 0 {
+		txObj, err := s.narwhal.SubmitTransaction(tx)
+		if err != nil {
+			s.logger.Error("Failed to add transaction to mempool",
+				zap.String("tx_hash", fmt.Sprintf("%X", types.Tx(tx).Hash())),
+				zap.Error(err))
+		} else {
+			s.logger.Debug("Transaction added to mempool",
+				zap.String("tx_hash", fmt.Sprintf("%X", types.Tx(tx).Hash())),
+				zap.String("narwhal_tx_hash", txObj.Hash.String()),
+				zap.Int("data_size", len(txObj.Data)),
+			)
+		}
+	}
+
 	return &coretypes.ResultBroadcastTx{
 		Code:      response.Code,
 		Data:      response.Data,
@@ -685,6 +802,24 @@ func (s *Server) broadcastTxAsync(ctx context.Context, params interface{}) (*cor
 	if err != nil {
 		return nil, err
 	}
+
+	// For async broadcast, add directly to mempool without CheckTx
+	// This is the expected behavior for async broadcasts
+	_, err = s.narwhal.SubmitTransaction(tx)
+	if err != nil {
+		s.logger.Error("Failed to add transaction to mempool (async)",
+			zap.String("tx_hash", fmt.Sprintf("%X", types.Tx(tx).Hash())),
+			zap.Error(err))
+		return &coretypes.ResultBroadcastTx{
+			Code: 1,
+			Data: []byte{},
+			Log:  err.Error(),
+			Hash: types.Tx(tx).Hash(),
+		}, nil
+	}
+
+	s.logger.Debug("Transaction added to mempool (async)",
+		zap.String("tx_hash", fmt.Sprintf("%X", types.Tx(tx).Hash())))
 
 	return &coretypes.ResultBroadcastTx{
 		Code: 0,
@@ -767,7 +902,12 @@ func (s *Server) extractTx(params interface{}) ([]byte, error) {
 		return nil, fmt.Errorf("tx parameter is required")
 	}
 
-	return hex.DecodeString(strings.TrimPrefix(txStr, "0x"))
+	txBytes, err := base64.StdEncoding.DecodeString(txStr)
+	if err != nil {
+		return nil, err
+	}
+
+	return txBytes, nil
 }
 
 func (s *Server) createBlockFromState(state state.State, height int64) *types.Block {
@@ -820,7 +960,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		response := JSONRPCResponse{
 			JSONRPC: "2.0",
-			ID:      req.ID,
+			ID:      -1,
 		}
 
 		if err != nil {
@@ -842,7 +982,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 func (s *Server) sendError(w http.ResponseWriter, id interface{}, code int, message, data string) {
 	response := JSONRPCResponse{
 		JSONRPC: "2.0",
-		ID:      id,
+		ID:      -1,
 		Error: &RPCError{
 			Code:    code,
 			Message: message,
@@ -1056,4 +1196,84 @@ func (s *Server) cosmosTx(ctx context.Context, params interface{}) (*CosmJSTxRes
 		Timestamp: time.Now().Format(time.RFC3339),
 		Events:    []CosmJSEvent{},
 	}, nil
+}
+
+// Dedicated cosmos REST endpoint handlers (not JSON-RPC wrapped)
+
+func (s *Server) handleCosmosAccount(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	address := vars["address"]
+
+	if address == "" {
+		http.Error(w, "address parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	response := map[string]interface{}{
+		"account": CosmJSAccount{
+			Address:       address,
+			AccountNumber: 1,
+			Sequence:      0,
+			PubKey:        "",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) handleCosmosBalances(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	address := vars["address"]
+
+	if address == "" {
+		http.Error(w, "address parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	response := map[string]interface{}{
+		"balances": []CosmJSBalance{
+			{
+				Denom:  "stake",
+				Amount: "1000000",
+			},
+		},
+		"pagination": map[string]interface{}{
+			"next_key": nil,
+			"total":    "1",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) handleCosmosTx(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	hash := vars["hash"]
+
+	if hash == "" {
+		http.Error(w, "hash parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	response := map[string]interface{}{
+		"tx_response": CosmJSTxResponse{
+			Height:    "1",
+			TxHash:    hash,
+			Code:      0,
+			Data:      "",
+			RawLog:    "[]",
+			Logs:      []CosmJSTxLog{},
+			Info:      "",
+			GasWanted: "100000",
+			GasUsed:   "50000",
+			Tx:        nil,
+			Timestamp: time.Now().Format(time.RFC3339),
+			Events:    []CosmJSEvent{},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

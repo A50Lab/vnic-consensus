@@ -66,7 +66,7 @@ VniCCSS is an advanced consensus engine that implements **Narwhal & Bullshark** 
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-rpc` | Consensus engine listen address | `tcp://0.0.0.0:26657` |
+| `-rpc` | Consensus engine listen address | `tcp://0.0.0.0:26656` |
 | `--app-addr` | ABCI application server address | `tcp://0.0.0.0:26658` |
 | `--genesis-file` | Path to genesis file | **Required** |
 | `--home-dir` | Home directory for data | `$HOME/.vniccss` |

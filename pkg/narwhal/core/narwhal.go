@@ -192,6 +192,7 @@ func (n *Narwhal) SubmitTransaction(data []byte) (*types.Transaction, error) {
 	n.logger.Debug("Submitting transaction to Narwhal",
 		zap.String("tx_hash", tx.Hash.String()),
 		zap.Int("data_size", len(data)),
+		zap.String("data_hex", fmt.Sprintf("%X", data)),
 	)
 
 	// Add to mempool

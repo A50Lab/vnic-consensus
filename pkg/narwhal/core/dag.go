@@ -419,6 +419,103 @@ func (m *DAGMempool) validateBatch(batch *types.Batch) error {
 	return nil
 }
 
+// RemoveProcessedBatches removes batches that have been processed in a block
+func (m *DAGMempool) RemoveProcessedBatches(batchHashes []types.Hash) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	removedCount := 0
+	for _, batchHash := range batchHashes {
+		if _, exists := m.batches[batchHash]; exists {
+			delete(m.batches, batchHash)
+			removedCount++
+			m.logger.Debug("Removed processed batch",
+				zap.String("batch_hash", batchHash.String()),
+			)
+		}
+	}
+
+	if removedCount > 0 {
+		m.logger.Info("Cleaned up processed batches",
+			zap.Int("removed_count", removedCount),
+		)
+	}
+}
+
+// RemoveProcessedCertificates removes certificates that have been processed
+func (m *DAGMempool) RemoveProcessedCertificates(certHashes []types.Hash) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	removedCount := 0
+	for _, certHash := range certHashes {
+		if cert, exists := m.certificates[certHash]; exists {
+			// Remove from main storage
+			delete(m.certificates, certHash)
+			delete(m.headers, certHash)
+
+			// Remove from DAG structure
+			delete(m.parents, certHash)
+			
+			// Remove from children references (clean up parent->child relationships)
+			for _, parentHash := range cert.Header.Parents {
+				if children, exists := m.children[parentHash]; exists {
+					// Remove this certificate from parent's children list
+					for i, childHash := range children {
+						if childHash == certHash {
+							m.children[parentHash] = append(children[:i], children[i+1:]...)
+							break
+						}
+					}
+				}
+			}
+			delete(m.children, certHash)
+
+			// Remove from round tracking
+			round := cert.Header.Round
+			if roundCerts, exists := m.certificatesByRound[round]; exists {
+				for i, hash := range roundCerts {
+					if hash == certHash {
+						m.certificatesByRound[round] = append(roundCerts[:i], roundCerts[i+1:]...)
+						break
+					}
+				}
+				// Remove round entry if empty
+				if len(m.certificatesByRound[round]) == 0 {
+					delete(m.certificatesByRound, round)
+				}
+			}
+
+			// Remove from author tracking
+			author := cert.Header.Author
+			if authorCerts, exists := m.certificatesByAuthor[author]; exists {
+				for i, hash := range authorCerts {
+					if hash == certHash {
+						m.certificatesByAuthor[author] = append(authorCerts[:i], authorCerts[i+1:]...)
+						break
+					}
+				}
+				// Remove author entry if empty
+				if len(m.certificatesByAuthor[author]) == 0 {
+					delete(m.certificatesByAuthor, author)
+				}
+			}
+
+			removedCount++
+			m.logger.Debug("Removed processed certificate",
+				zap.String("cert_hash", certHash.String()),
+				zap.Uint64("round", uint64(cert.Header.Round)),
+			)
+		}
+	}
+
+	if removedCount > 0 {
+		m.logger.Info("Cleaned up processed certificates",
+			zap.Int("removed_count", removedCount),
+		)
+	}
+}
+
 // Clear removes old data based on some criteria (for memory management)
 func (m *DAGMempool) Clear(beforeRound types.Round) {
 	m.mutex.Lock()

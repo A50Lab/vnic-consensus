@@ -138,10 +138,12 @@ func (c *Creator) executeBlockTransactions(
 	}
 
 	// Use the transactions returned by PrepareProposal (app may modify them)
-	finalTxs := prepareResp.Txs
+	finalTxs := txBytes
+
 	c.logger.Debug("PrepareProposal completed",
 		zap.Int("original_txs", len(txBytes)),
 		zap.Int("prepared_txs", len(finalTxs)),
+		zap.Bool("using_original", len(prepareResp.Txs) == 0 && len(txBytes) > 0),
 	)
 
 	// Create consistent block hash before ProcessProposal
@@ -205,10 +207,25 @@ func (c *Creator) executeBlockTransactions(
 	}
 
 	// Parse transaction results from ABCI response
-	transactionResults := make([]*TransactionResult, len(transactions))
+	// Create results based on transactions that were actually sent to ABCI
+	transactionResults := make([]*TransactionResult, len(finalTxs))
 	totalGasUsed := int64(0)
 
-	for i, tx := range transactions {
+	// Map original transactions by their data for lookup
+	originalTxMap := make(map[string]*types.Transaction)
+	for _, tx := range transactions {
+		originalTxMap[string(tx.Data)] = tx
+	}
+
+	for i, txData := range finalTxs {
+		// Find the original transaction for this data
+		var originalTx *types.Transaction
+		if tx, exists := originalTxMap[string(txData)]; exists {
+			originalTx = tx
+		} else {
+			// Create a temporary transaction for unknown data
+			originalTx = types.NewTransaction(txData)
+		}
 		var gasUsed int64
 		var success bool
 		var log string
@@ -224,7 +241,7 @@ func (c *Creator) executeBlockTransactions(
 			}
 		} else {
 			// Fallback values if no result available
-			gasUsed = int64(len(tx.Data) * 10)
+			gasUsed = int64(len(originalTx.Data) * 10)
 			success = true
 			log = fmt.Sprintf("Transaction %d executed", i)
 		}
@@ -233,7 +250,7 @@ func (c *Creator) executeBlockTransactions(
 
 		transactionResults[i] = &TransactionResult{
 			Index:   i,
-			TxHash:  tx.Hash,
+			TxHash:  originalTx.Hash,
 			Success: success,
 			GasUsed: gasUsed,
 			Log:     log,

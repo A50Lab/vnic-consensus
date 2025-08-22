@@ -181,7 +181,24 @@ func (c *Client) PrepareProposal(ctx context.Context, height int64, txs [][]byte
 		Txs:    txs,
 	}
 
-	return c.client.PrepareProposal(timeoutCtx, req)
+	resp, err := c.client.PrepareProposal(timeoutCtx, req)
+	if err != nil {
+		c.logger.Error("ABCI PrepareProposal failed", zap.Error(err))
+		return nil, err
+	}
+
+	c.logger.Debug("ABCI PrepareProposal response",
+		zap.Int("output_tx_count", len(resp.Txs)),
+		zap.Strings("output_tx_hashes", func() []string {
+			hashes := make([]string, len(resp.Txs))
+			for i, tx := range resp.Txs {
+				hashes[i] = fmt.Sprintf("%X", tx)
+			}
+			return hashes
+		}()),
+	)
+
+	return resp, nil
 }
 
 // FinalizeBlock finalizes a block with transactions (ABCI++ method)

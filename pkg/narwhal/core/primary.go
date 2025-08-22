@@ -328,10 +328,7 @@ func (p *Primary) selectPayloadBatches() []types.Hash {
 
 	// Select batches up to maxPayloadSize
 	payload := make([]types.Hash, 0, p.maxPayloadSize)
-	selectedCount := p.maxPayloadSize
-	if selectedCount > len(allBatches) {
-		selectedCount = len(allBatches)
-	}
+	selectedCount := min(p.maxPayloadSize, len(allBatches))
 
 	// Sort batches by timestamp for deterministic selection
 	sort.Slice(allBatches, func(i, j int) bool {
@@ -349,31 +346,20 @@ func (p *Primary) selectPayloadBatches() []types.Hash {
 		zap.Int("max_payload_size", p.maxPayloadSize),
 	)
 
+	for _, batch := range payload {
+		p.logger.Debug("Selected payload batch",
+			zap.String("batch_id", batch.String()),
+		)
+	}
+
 	return payload
 }
 
 // getAllAvailableBatches gets all available batches from mempool that can be included
 func (p *Primary) getAllAvailableBatches() []*types.Batch {
-	// This is a simplified implementation - in production you'd want more sophisticated selection
-	// For now, we'll query batches from our known workers
 	batches := make([]*types.Batch, 0)
-
-	p.workersMutex.RLock()
-	defer p.workersMutex.RUnlock()
-
-	// Get batches from all our workers
-	for _, worker := range p.workers {
-		_ = worker.GetStats() // Worker stats for future batch retrieval implementation
-		// In a real implementation, we'd have a way to get batches from workers
-		// For now, we'll simulate this by getting recent batches from mempool
-	}
-
-	// Fallback: get some batches directly from mempool
-	// This is a simplified approach - in production you'd have better batch tracking
-	mempoolStats := p.mempool.GetStats()
-	if mempoolStats["batches"].(int) > 0 {
-		// Get recent batches (simplified - would need actual batch retrieval method)
-		// For now return empty to avoid breaking the system
+	for _, batch := range p.mempool.batches {
+		batches = append(batches, batch)
 	}
 
 	return batches

@@ -306,7 +306,7 @@ func (n *Node) initBullshark() error {
 func (n *Node) initRPCServer() error {
 	n.logger.Info("Initializing RPC server", zap.String("listen_addr", n.config.RPC.ListenAddress))
 
-	n.rpcServer = rpc.NewServer(n.config.RPC, n.abciClient, n.logger)
+	n.rpcServer = rpc.NewServer(n.config.RPC, n.abciClient, n.narwhal, n.logger)
 
 	n.logger.Info("RPC server initialized successfully")
 	return nil
