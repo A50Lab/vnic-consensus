@@ -1,9 +1,10 @@
 const { StargateClient, SigningStargateClient } = require("@cosmjs/stargate");
-const { toBech32 } = require("@cosmjs/encoding");
+const { toBech32, fromHex, toHex } = require("@cosmjs/encoding");
 const { Sha256, Random } = require("@cosmjs/crypto");
-const { fromBase64 } = require("@cosmjs/encoding");
+const { fromBase64, toBase64 } = require("@cosmjs/encoding");
 const { DirectSecp256k1HdWallet } = require("@cosmjs/proto-signing");
 const { coins } = require("@cosmjs/stargate");
+const { CometClient } = require("@cosmjs/tendermint-rpc");
 
 async function checkBalance(mnemonic, rpcEndpoint, addressPrefix = "cosmos") {
     try {
@@ -86,11 +87,12 @@ async function sendMoney(
     }
 }
 
+// Use the funded test wallet that we successfully funded earlier
 const MNEMONIC =
-    "tail since struggle guess decorate enter street text lens rabbit eyebrow barrel soul disease behind width aim addict mind lounge scissors crazy mercy loud";
-const RPC_ENDPOINT = "http://127.0.0.1:26656";
+    "upon stem myth silver whale gadget giraffe exist cannon clip spike pilot";
+const RPC_ENDPOINT = "http://127.0.0.1:26657";
 const ADDRESS_PREFIX = "vnic";
-const DENOM = "evnd";
+const DENOM = "stake";
 
 async function main() {
     console.log("=== Checking initial balance ===");
@@ -102,7 +104,7 @@ async function main() {
 
     console.log("\n=== Sending money to random address ===");
     try {
-        await sendMoney(MNEMONIC, randomAddress, "7", DENOM, RPC_ENDPOINT, ADDRESS_PREFIX);
+        await sendMoney(MNEMONIC, randomAddress, "2", DENOM, RPC_ENDPOINT, ADDRESS_PREFIX);
         console.log("Money sent successfully!");
 
         console.log("\n=== Checking balance of random address ===");

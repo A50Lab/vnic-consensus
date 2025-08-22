@@ -266,7 +266,7 @@ for i in $(seq 1 $NUM_NODES); do
         --app-addr "127.0.0.1:$ABCI_PORT" \
         --genesis-file "$NODE_HOME/config/genesis.json" \
         --home-dir "$VNICCSS_HOME" \
-        --consensus-listen-addr "tcp://0.0.0.0:$CONSENSUS_PORT" \
+        --rpc-listen-addr "tcp://0.0.0.0:$CONSENSUS_PORT" \
         --p2p-listen-addr "/ip4/127.0.0.1/tcp/$P2P_PORT" > "vniccss_node$i.log" 2>&1 &
     VNICCSS_PID=$!
     echo "vniccss_node$i_pid=$VNICCSS_PID" >> "$BASE_HOME/pids.txt"

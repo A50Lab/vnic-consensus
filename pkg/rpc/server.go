@@ -421,7 +421,7 @@ func (s *Server) status(ctx context.Context) (*map[string]interface{}, error) {
 	return &map[string]interface{}{
 		"node_info": map[string]interface{}{
 			"channels":    nodeInfo.Channels,
-			"id":          nodeInfo.DefaultNodeID,
+			"id":          hex.EncodeToString([]byte(nodeInfo.DefaultNodeID)),
 			"listen_addr": nodeInfo.ListenAddr,
 			"moniker":     nodeInfo.Moniker,
 			"network":     nodeInfo.Network,
