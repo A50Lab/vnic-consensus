@@ -102,7 +102,7 @@ async function main() {
 
     console.log("\n=== Sending money to random address ===");
     try {
-        await sendMoney(MNEMONIC, randomAddress, "1000000", DENOM, RPC_ENDPOINT, ADDRESS_PREFIX);
+        await sendMoney(MNEMONIC, randomAddress, "7", DENOM, RPC_ENDPOINT, ADDRESS_PREFIX);
         console.log("Money sent successfully!");
 
         console.log("\n=== Checking balance of random address ===");

@@ -10,6 +10,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/libp2p/go-libp2p v0.30.0
 	github.com/multiformats/go-multiaddr v0.11.0
+	github.com/spf13/cast v1.5.1
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/zap v1.25.0
 )
@@ -172,7 +173,6 @@ require (
 	github.com/sasha-s/go-deadlock v0.3.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/afero v1.9.5 // indirect
-	github.com/spf13/cast v1.5.1 // indirect
 	github.com/spf13/cobra v1.7.0 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
