@@ -41,7 +41,7 @@ func (c *Config) Validate() error {
 
 func DefaultRPCConfig() RPCConfig {
 	return RPCConfig{
-		ListenAddress:             "tcp://0.0.0.0:26657",
+		ListenAddress:             "tcp://0.0.0.0:26656",
 		CORSAllowedOrigins:        []string{"*"},
 		CORSAllowedMethods:        []string{"HEAD", "GET", "POST"},
 		CORSAllowedHeaders:        []string{"Origin", "Accept", "Content-Type", "X-Requested-With", "X-Server-Time"},

@@ -21,12 +21,6 @@ func main() {
 		Version: version,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "consensus-listen-addr",
-				Usage:    "Address for consensus engine to listen on",
-				Value:    "tcp://0.0.0.0:26657",
-				Required: false,
-			},
-			&cli.StringFlag{
 				Name:     "app-addr",
 				Usage:    "Address of the Cosmos application ABCI server",
 				Value:    "tcp://0.0.0.0:26658",
@@ -52,7 +46,7 @@ func main() {
 			&cli.StringFlag{
 				Name:     "rpc-listen-addr",
 				Usage:    "Address for RPC server to listen on",
-				Value:    "tcp://0.0.0.0:26657",
+				Value:    "tcp://0.0.0.0:26656",
 				Required: false,
 			},
 			&cli.StringFlag{

@@ -12,7 +12,6 @@ import (
 
 	"github.com/vietchain/vniccss/pkg/narwhal/p2p"
 	"github.com/vietchain/vniccss/pkg/narwhal/types"
-	"github.com/vietchain/vniccss/pkg/shoal"
 )
 
 // Primary represents a primary node in Narwhal that creates certificates
@@ -54,9 +53,6 @@ type Primary struct {
 	// Callbacks
 	onCertificateCreated func(*types.Certificate)
 	onRoundAdvanced      func(types.Round)
-
-	// Shoal framework integration
-	shoalFramework *shoal.ShoalFramework
 }
 
 // NewPrimary creates a new primary node
@@ -86,13 +82,7 @@ func NewPrimary(
 		maxPayloadSize:     100,
 		minPayloadSize:     0, // Allow empty certificates for continuous block production
 		pendingVotes:       make(map[types.Hash]map[types.NodeID]*types.Vote),
-		shoalFramework:     nil, // Will be set via SetShoalFramework
 	}
-}
-
-// SetShoalFramework sets the Shoal framework for enhanced operations
-func (p *Primary) SetShoalFramework(framework *shoal.ShoalFramework) {
-	p.shoalFramework = framework
 }
 
 // SetConfig sets the primary configuration
@@ -212,19 +202,8 @@ func (p *Primary) certificateCreationLoop() {
 			p.logger.Debug("Certificate creation loop stopped")
 			return
 		case <-ticker.C:
-			start := time.Now()
 			if err := p.tryCreateCertificate(); err != nil {
 				p.logger.Error("Failed to create certificate", zap.Error(err))
-				// Update reputation with failure if Shoal is enabled
-				if p.shoalFramework != nil {
-					p.shoalFramework.UpdateReputation(p.nodeID, time.Since(start), false)
-				}
-			} else {
-				// Update reputation with success if Shoal is enabled
-				if p.shoalFramework != nil {
-					p.shoalFramework.UpdateReputation(p.nodeID, time.Since(start), true)
-					p.shoalFramework.UpdateLatency(time.Since(start))
-				}
 			}
 
 			// Update ticker with new adaptive timeout
@@ -243,9 +222,6 @@ func (p *Primary) certificateCreationLoop() {
 
 // getAdaptiveTimeout returns the current timeout (adaptive if Shoal is enabled)
 func (p *Primary) getAdaptiveTimeout() time.Duration {
-	if p.shoalFramework != nil && p.shoalFramework.IsRunning() {
-		return p.shoalFramework.GetCurrentTimeout()
-	}
 	return p.certificateTimeout
 }
 
@@ -273,82 +249,7 @@ func (p *Primary) voteProcessingLoop() {
 func (p *Primary) tryCreateCertificate() error {
 	p.logger.Debug("Attempting to create certificate")
 
-	// Use Shoal pipelining if available
-	if p.shoalFramework != nil && p.shoalFramework.IsRunning() {
-		return p.createCertificateWithPipelining()
-	}
-
 	return p.createCertificateSync()
-}
-
-// createCertificateWithPipelining creates a certificate using Shoal pipelining
-func (p *Primary) createCertificateWithPipelining() error {
-	// Get available batches for payload
-	payload := p.selectPayloadBatches()
-	parents := p.selectParentCertificates()
-
-	// Create header
-	header := &types.Header{
-		Author:    p.nodeID,
-		Round:     p.GetCurrentRound(),
-		Epoch:     p.currentEpoch,
-		Parents:   parents,
-		Payload:   payload,
-		Timestamp: time.Now(),
-	}
-
-	// Submit certificate creation to pipeline
-	return p.shoalFramework.SubmitCertificateOperation(&types.Certificate{
-		Header: header,
-	}, func(result shoal.PipelineResult) {
-		if result.Success {
-			if cert, ok := result.Data.(*types.Certificate); ok {
-				p.onPipelinedCertificateCreated(cert)
-			}
-		} else {
-			p.logger.Error("Pipelined certificate creation failed", zap.Error(result.Error))
-		}
-	})
-}
-
-// onPipelinedCertificateCreated handles successful pipelined certificate creation
-func (p *Primary) onPipelinedCertificateCreated(cert *types.Certificate) {
-	// Sign the header
-	headerHash := cert.Header.Hash()
-	signature, err := p.privateKey.Sign(headerHash.Bytes())
-	if err != nil {
-		p.logger.Error("Failed to sign pipelined certificate", zap.Error(err))
-		return
-	}
-	cert.Header.Signature = signature
-	cert.Signature = signature
-	cert.Hash = types.NewHash(append(headerHash.Bytes(), signature...))
-
-	p.logger.Info("Created new pipelined certificate",
-		zap.String("cert_hash", cert.Hash.String()),
-		zap.Uint64("round", uint64(cert.Header.Round)),
-		zap.Int("payload_size", len(cert.Header.Payload)),
-		zap.Int("parents_count", len(cert.Header.Parents)),
-	)
-
-	// Add certificate to mempool
-	if err := p.mempool.AddCertificate(cert); err != nil {
-		p.logger.Error("Failed to add pipelined certificate to mempool", zap.Error(err))
-		return
-	}
-
-	// Broadcast header to committee for voting
-	if err := p.network.BroadcastHeader(cert.Header); err != nil {
-		p.logger.Error("Failed to broadcast pipelined header", zap.Error(err))
-	}
-
-	// Call callback if set
-	if p.onCertificateCreated != nil {
-		p.onCertificateCreated(cert)
-	}
-
-	// Advance to next round for continuous progress
-	p.AdvanceRound()
 }
 
 // createCertificateSync creates a certificate synchronously (fallback)
@@ -427,10 +328,7 @@ func (p *Primary) selectPayloadBatches() []types.Hash {
 
 	// Select batches up to maxPayloadSize
 	payload := make([]types.Hash, 0, p.maxPayloadSize)
-	selectedCount := p.maxPayloadSize
-	if selectedCount > len(allBatches) {
-		selectedCount = len(allBatches)
-	}
+	selectedCount := min(p.maxPayloadSize, len(allBatches))
 
 	// Sort batches by timestamp for deterministic selection
 	sort.Slice(allBatches, func(i, j int) bool {
@@ -448,31 +346,20 @@ func (p *Primary) selectPayloadBatches() []types.Hash {
 		zap.Int("max_payload_size", p.maxPayloadSize),
 	)
 
+	for _, batch := range payload {
+		p.logger.Debug("Selected payload batch",
+			zap.String("batch_id", batch.String()),
+		)
+	}
+
 	return payload
 }
 
 // getAllAvailableBatches gets all available batches from mempool that can be included
 func (p *Primary) getAllAvailableBatches() []*types.Batch {
-	// This is a simplified implementation - in production you'd want more sophisticated selection
-	// For now, we'll query batches from our known workers
 	batches := make([]*types.Batch, 0)
-
-	p.workersMutex.RLock()
-	defer p.workersMutex.RUnlock()
-
-	// Get batches from all our workers
-	for _, worker := range p.workers {
-		_ = worker.GetStats() // Worker stats for future batch retrieval implementation
-		// In a real implementation, we'd have a way to get batches from workers
-		// For now, we'll simulate this by getting recent batches from mempool
-	}
-
-	// Fallback: get some batches directly from mempool
-	// This is a simplified approach - in production you'd have better batch tracking
-	mempoolStats := p.mempool.GetStats()
-	if mempoolStats["batches"].(int) > 0 {
-		// Get recent batches (simplified - would need actual batch retrieval method)
-		// For now return empty to avoid breaking the system
+	for _, batch := range p.mempool.batches {
+		batches = append(batches, batch)
 	}
 
 	return batches

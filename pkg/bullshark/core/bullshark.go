@@ -298,6 +298,9 @@ func (b *Bullshark) createBlockForRound(round types.Round) (*bullsharktypes.Bull
 	// Update consensus state
 	b.consensusState.UpdateState(executionResult.Block)
 
+	// Clean up processed items from mempool
+	b.cleanupProcessedItems(orderingResult)
+
 	// Update our state to match ABCI state
 	abciState := b.abciClient.GetState()
 	b.logger.Info("Block with transactions committed to Cosmos",
@@ -455,4 +458,46 @@ func (b *Bullshark) GetEngine() *Engine {
 // GetSelector returns the anchor selector
 func (b *Bullshark) GetSelector() *Selector {
 	return b.anchorSelector
+}
+
+// cleanupProcessedItems removes processed certificates and batches from mempool
+func (b *Bullshark) cleanupProcessedItems(orderingResult *bullsharktypes.OrderingResult) {
+	// Get mempool stats before cleanup
+	statsBefore := b.mempool.GetStats()
+
+	// Collect certificate hashes that were processed
+	certHashes := make([]types.Hash, len(orderingResult.OrderedCertificates))
+	for i, orderedCert := range orderingResult.OrderedCertificates {
+		certHashes[i] = orderedCert.Certificate.Hash
+	}
+
+	// Collect batch hashes that were processed
+	batchHashes := make([]types.Hash, len(orderingResult.OrderedBatches))
+	for i, orderedBatch := range orderingResult.OrderedBatches {
+		batchHashes[i] = orderedBatch.Batch.ID
+	}
+
+	b.logger.Debug("Cleaning up processed items from mempool",
+		zap.Int("certificates_to_remove", len(certHashes)),
+		zap.Int("batches_to_remove", len(batchHashes)),
+		zap.Int64("block_height", int64(orderingResult.Block.Height)),
+		zap.Any("mempool_before", statsBefore),
+	)
+
+	// Remove processed certificates from DAG mempool
+	if len(certHashes) > 0 {
+		b.mempool.RemoveProcessedCertificates(certHashes)
+	}
+
+	// Remove processed batches from DAG mempool  
+	if len(batchHashes) > 0 {
+		b.mempool.RemoveProcessedBatches(batchHashes)
+	}
+
+	// Log mempool stats after cleanup
+	stats := b.mempool.GetStats()
+	b.logger.Info("Mempool cleanup completed",
+		zap.Int64("block_height", int64(orderingResult.Block.Height)),
+		zap.Any("mempool_stats", stats),
+	)
 }

@@ -331,9 +331,7 @@ func (e *Engine) extractOrderedTransactions(orderedBatches []*bullsharktypes.Ord
 	transactions := make([]*types.Transaction, 0)
 
 	for _, orderedBatch := range orderedBatches {
-		for _, tx := range orderedBatch.Batch.Transactions {
-			transactions = append(transactions, tx)
-		}
+		transactions = append(transactions, orderedBatch.Batch.Transactions...)
 	}
 
 	e.logger.Debug("Extracted transactions from batches",
@@ -362,52 +360,52 @@ func (e *Engine) validateAnchor(anchor *bullsharktypes.Anchor) error {
 	if anchor == nil {
 		return fmt.Errorf("anchor is nil")
 	}
-	
+
 	if anchor.Certificate == nil {
 		return fmt.Errorf("anchor certificate is nil")
 	}
-	
+
 	cert := anchor.Certificate
-	
+
 	// Validate certificate structure
 	if cert.Header == nil {
 		return fmt.Errorf("certificate header is nil")
 	}
-	
+
 	// Validate certificate hash
 	expectedHash := cert.Header.Hash()
 	if cert.Hash != expectedHash {
-		return fmt.Errorf("certificate hash mismatch: expected %s, got %s", 
+		return fmt.Errorf("certificate hash mismatch: expected %s, got %s",
 			expectedHash.String(), cert.Hash.String())
 	}
-	
+
 	// Validate signature exists
 	if len(cert.Signature) == 0 {
 		return fmt.Errorf("certificate has no signature")
 	}
-	
+
 	// Validate round consistency
 	if cert.Header.Round != anchor.Round {
 		return fmt.Errorf("anchor round mismatch: certificate round %d, anchor round %d",
 			cert.Header.Round, anchor.Round)
 	}
-	
+
 	// Validate anchor is marked as selected
 	if !anchor.Selected {
 		return fmt.Errorf("anchor is not marked as selected")
 	}
-	
+
 	// Verify the certificate exists in mempool
 	if _, exists := e.mempool.GetCertificate(cert.Hash); !exists {
 		return fmt.Errorf("anchor certificate not found in mempool: %s", cert.Hash.String())
 	}
-	
+
 	e.logger.Debug("Anchor validation passed",
 		zap.String("cert_hash", cert.Hash.String()),
 		zap.Uint64("round", uint64(anchor.Round)),
 		zap.Int("anchor_index", anchor.AnchorIndex),
 	)
-	
+
 	return nil
 }
 
