@@ -5,10 +5,7 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/vietchain/vniccss)
 
 > ⚠️ **PROTOCOL IMPLEMENTATION - NOT FOR PRODUCTION USE**
-> 
-> This is an experimental implementation of advanced consensus protocols for research and development purposes. 
-> **DO NOT USE IN PRODUCTION ENVIRONMENTS.** The code is provided as-is for educational and research purposes only.
-
+Các anh tài đừng bịp nữa nhé https://arxiv.org/pdf/2401.10369. Code mẫu thôi. Code chính private không public.
 ## 📖 Overview
 
 VniCCSS is an advanced consensus engine that implements **Narwhal & Bullshark** consensus protocols enhanced with the **Shoal framework** for the Cosmos SDK ecosystem. It provides high-throughput, low-latency consensus with improved robustness and performance characteristics.
